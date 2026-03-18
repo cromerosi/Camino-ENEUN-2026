@@ -39,7 +39,7 @@ function parseCamping(ticketType: string | null): boolean {
 
 function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
   if (!confirmAnswers || typeof confirmAnswers !== 'object' || Array.isArray(confirmAnswers)) {
-    return 'Sin comite asignado';
+    return 'Sin comité asignado';
   }
 
   const record = confirmAnswers as Record<string, unknown>;
@@ -56,7 +56,7 @@ function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
     .map((value) => value.trim())
     .filter((value) => value.length > 0 && value.toLowerCase() !== 'no');
 
-  return normalized.length > 0 ? normalized.join(', ') : 'Sin comite asignado';
+  return normalized.length > 0 ? normalized.join(', ') : 'Sin comité asignado';
 }
 
 async function getCommitteeByEmail(email: string): Promise<string> {
@@ -72,7 +72,7 @@ async function getCommitteeByEmail(email: string): Promise<string> {
 
     return parseCommitteeFromConfirmAnswers(rows[0]?.confirm_answers ?? null);
   } catch {
-    return 'Sin comite asignado';
+    return 'Sin comité asignado';
   }
 }
 

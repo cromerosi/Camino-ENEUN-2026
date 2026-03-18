@@ -9,9 +9,9 @@ import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import { getParticipantByEmail, type ParticipantViewModel } from '../lib/participant';
 
 const STEP_LABELS: Record<string, string> = {
-  Preinscripcion: 'Preinscripcion',
-  Preconfirmacion: 'Preconfirmacion',
-  'Validacion de sede de origen': 'Validacion de sede de origen',
+  Preinscripcion: 'Preinscripción',
+  Preconfirmacion: 'Preconfirmación',
+  'Validacion de sede de origen': 'Validación de sede de origen',
   'Capacitaciones de la plataforma': 'Capacitaciones de la plataforma',
   'Formulario final': 'Formulario final',
 };
@@ -62,10 +62,10 @@ export default function DashboardPage({
   campingCopy,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
-    { name: 'Sin iniciar', color: 'gray', description: 'Etapa aun bloqueada.' },
-    { name: 'Completado', color: 'green', description: 'Revision aprobada.' },
+    { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
+    { name: 'Completado', color: 'green', description: 'Revisión aprobada.' },
     { name: 'En curso', color: 'purple', description: 'Actividad activa.' },
-    { name: 'Atencion', color: 'red', description: 'Accion requerida.' },
+    { name: 'Atención', color: 'red', description: 'Acción requerida.' },
   ] as const;
 
   return (
@@ -78,7 +78,7 @@ export default function DashboardPage({
         <div className="relative mx-auto flex max-w-6xl flex-col gap-12">
           <header className="text-center">
             <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">Tu camino a Manizales · ENEUN 2026</p>
-            <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Visualizacion del participante</h1>
+            <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Visualización del participante</h1>
             <p className="mx-auto mt-4 max-w-2xl text-base text-slate-300">
               Panel compacto para seguir el camino ENEUN: datos personales, estado de campamento y avance
               en cinco nodos obligatorios.
@@ -104,7 +104,7 @@ export default function DashboardPage({
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.documentType}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Numero de documento</dt>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Número de documento</dt>
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.documentNumber}</dd>
                 </div>
                 <div>
@@ -116,11 +116,11 @@ export default function DashboardPage({
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.faculty}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampamento</dt>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampamiento</dt>
                   <dd className="mt-2 text-lg font-semibold text-white">{campingCopy}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Comite donde apoya</dt>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Comité donde apoya</dt>
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.committee}</dd>
                 </div>
               </dl>
@@ -129,7 +129,7 @@ export default function DashboardPage({
                   href="/api/auth/logout"
                   className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
                 >
-                  Cerrar sesion
+                  Cerrar sesión
                 </a>
               </div>
               <p className="mt-auto pt-8 text-center text-[11px] tracking-[0.10em] text-slate-500">
@@ -140,7 +140,7 @@ export default function DashboardPage({
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Camino ENEUN</p>
-                  <h2 className="mt-3 text-2xl font-semibold text-white">Linea de progreso</h2>
+                  <h2 className="mt-3 text-2xl font-semibold text-white">Línea de progreso</h2>
                 </div>
                 <span className="text-4xl font-semibold text-emerald-300">{progressPercent}%</span>
               </div>

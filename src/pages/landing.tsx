@@ -4,8 +4,8 @@ import Layout from '../layouts/Layout';
 const errorMessages: Record<string, string> = {
   missing_fields: 'Debes ingresar usuario y documento para continuar.',
   invalid_credentials: 'Usuario o documento incorrecto. Intenta nuevamente.',
-  auth_failed: 'No fue posible completar la autenticacion. Intenta de nuevo.',
-  auth_disabled: 'La autenticacion con Auth0 esta deshabilitado temporalmente.',
+  auth_failed: 'No fue posible completar la autenticación. Intenta de nuevo.',
+  auth_disabled: 'La autenticación con Auth0 está deshabilitada temporalmente.',
 };
 
 interface LandingProps {
@@ -28,7 +28,7 @@ export default function LandingPage({
           <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Landing de acceso</h1>
           <p className="mx-auto mt-6 max-w-2xl text-base text-slate-300">
             Ingresa con tu usuario institucional para visualizar tu proceso.
-            Usuario: solo la parte antes de @unal.edu.co. Contrasena: tu numero de documento.
+            Usuario: solo la parte antes de @unal.edu.co. Contraseña: tu número de documento.
           </p>
 
           {errorMessage && (
@@ -56,12 +56,12 @@ export default function LandingPage({
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Contrasena</span>
+              <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Contraseña</span>
               <input
                 type="password"
                 name="document"
                 autoComplete="current-password"
-                placeholder="Numero de documento"
+                placeholder="Número de documento"
                 required
                 className="w-full rounded-xl border border-white/15 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/60"
               />
@@ -71,7 +71,7 @@ export default function LandingPage({
               type="submit"
               className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-8 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-300"
             >
-              Iniciar sesion
+              Iniciar sesión
             </button>
 
             <p className="text-center text-xs uppercase tracking-[0.2em] text-slate-500">Solo dominio @unal.edu.co</p>
@@ -86,7 +86,7 @@ export const getServerSideProps: GetServerSideProps<LandingProps> = async (conte
   const error = typeof context.query.error === 'string' ? context.query.error : null;
   return {
     props: {
-      errorMessage: error ? errorMessages[error] ?? 'Error inesperado de autenticacion.' : null,
+      errorMessage: error ? errorMessages[error] ?? 'Error inesperado de autenticación.' : null,
     },
   };
 };
