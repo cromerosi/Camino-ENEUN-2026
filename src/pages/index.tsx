@@ -70,32 +70,31 @@ export default function DashboardPage({
 
   return (
     <Layout>
-      <main className="relative px-6 py-16 lg:px-16">
+      <main className="relative overflow-x-hidden px-4 py-12 sm:px-6 sm:py-16 lg:px-16">
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
           <div className="absolute -top-32 right-4 h-80 w-80 rounded-full bg-fuchsia-500/25 blur-[140px]"></div>
           <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-500/20 blur-[160px]"></div>
         </div>
         <div className="relative mx-auto flex max-w-6xl flex-col gap-12">
           <header className="text-center">
-            <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">Tu camino a Manizales · ENEUN 2026</p>
-            <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Visualización del participante</h1>
+            <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">¡Tú camino a Manizales! · ENEUN 2026</p>
+            <h1 className="mt-5 text-3xl font-semibold text-white sm:text-5xl">Panel de visualización del participante</h1>
             <p className="mx-auto mt-4 max-w-2xl text-base text-slate-300">
-              Panel compacto para seguir el camino ENEUN: datos personales, estado de campamento y avance
-              en cinco nodos obligatorios.
+              En esta página podrás visualizar tu progreso y estado como participante en el evento ENEUN 2026. Recuerda que si no cumples todos los pasos requeridos, no podrás asistir al evento. ¡Sigue avanzando para asegurar tu participación en el ENEUN 2026 · Manizales!
             </p>
           </header>
           <section className="grid gap-8 lg:grid-cols-[1.2fr_0.9fr]">
-            <article className="flex h-full flex-col rounded-3xl border border-white/10 bg-white/5 p-8 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
+            <article className="flex h-full min-w-0 flex-col rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
               <div className="flex flex-wrap items-start justify-between gap-6">
                 <div>
                   <p className="text-xs uppercase tracking-[0.5em] text-slate-400">Participante</p>
                   <h2 className="mt-3 text-3xl font-semibold text-white">{participant.fullName}</h2>
                 </div>
-                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 text-xs uppercase tracking-[0.4em] text-emerald-200">
+                <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-emerald-200 sm:text-xs sm:tracking-[0.4em]">
                   <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
                     <circle cx="5" cy="5" r="5" />
                   </svg>
-                  {authEmail}
+                  <span className="break-all">{authEmail}</span>
                 </span>
               </div>
               <dl className="mt-10 grid gap-6 sm:grid-cols-2">
@@ -132,11 +131,11 @@ export default function DashboardPage({
                   Cerrar sesión
                 </a>
               </div>
-              <p className="mt-auto pt-8 text-center text-[11px] tracking-[0.10em] text-slate-500">
+              <p className="mt-auto break-all pt-8 text-center text-[11px] tracking-[0.10em] text-slate-500">
                 UUID: <span className="font-mono lowercase text-slate-400">{participant.uuid}</span>
               </p>
             </article>
-            <article className="rounded-3xl border border-white/10 bg-slate-950/70 p-8 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
+            <article className="min-w-0 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Camino ENEUN</p>
@@ -151,17 +150,17 @@ export default function DashboardPage({
                 ></div>
               </div>
               <div className="relative mt-10">
-                <ol className="relative flex flex-wrap justify-between gap-6">
+                <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
                   {journeySteps.map((step, index) => {
                     const style = getStatusStyle(step.status);
                     return (
-                      <li className="flex min-w-[120px] flex-1 flex-col items-center text-center" key={step.label}>
+                      <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
                         <div
                           className={`flex h-16 w-16 items-center justify-center rounded-full text-sm font-semibold uppercase tracking-[0.2em] ${style.node}`}
                         >
                           {index + 1}
                         </div>
-                        <p className={`mt-4 text-xs font-semibold tracking-[0.2em] ${style.label}`}>
+                        <p className={`mt-4 break-words text-xs font-semibold tracking-[0.2em] ${style.label}`}>
                           {STEP_LABELS[step.label] ?? step.label}
                         </p>
                         <p className={`mt-1 text-sm ${style.detail}`}>{step.detail}</p>
