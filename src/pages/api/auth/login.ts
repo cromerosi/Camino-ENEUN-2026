@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
-  createSignedSessionToken,
-  getSessionCookieName,
+  createAuthState,
+  getAuth0AuthorizeUrl,
+  getAuthStateCookieName,
 } from '../../../lib/auth';
-import { authenticateWithDocument } from '../../../lib/participant';
 
 function redirect(res: NextApiResponse, destination: string): void {
   res.writeHead(303, { Location: destination });
@@ -16,38 +16,21 @@ function buildCookie(name: string, value: string, maxAgeSeconds: number): string
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method === 'GET') {
-    redirect(res, '/landing');
-    return;
-  }
-
-  if (req.method !== 'POST') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST');
     res.status(405).end('Method Not Allowed');
     return;
   }
 
-  const username = String(req.body?.username ?? '').trim();
-  const document = String(req.body?.document ?? '').trim();
-
-  if (!username || !document) {
-    redirect(res, '/landing?error=missing_fields');
-    return;
-  }
-
   try {
-    const user = await authenticateWithDocument(username, document);
-    if (!user) {
-      redirect(res, '/landing?error=invalid_credentials');
-      return;
-    }
+    const state = createAuthState();
+    const authorizeUrl = getAuth0AuthorizeUrl(state);
 
-    const sessionToken = await createSignedSessionToken(user);
-    res.setHeader('Set-Cookie', buildCookie(getSessionCookieName(), sessionToken, 60 * 60 * 8));
-    redirect(res, '/');
+    res.setHeader('Set-Cookie', buildCookie(getAuthStateCookieName(), state, 60 * 10));
+    redirect(res, authorizeUrl);
     return;
   } catch {
-    redirect(res, '/landing?error=auth_failed');
+    redirect(res, '/landing?error=auth_disabled');
     return;
   }
 }

@@ -1,6 +1,80 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
+import {
+  createSignedSessionToken,
+  exchangeCodeForTokens,
+  fetchAuth0UserInfo,
+  getAuthStateCookieName,
+  getSessionCookieName,
+  isAllowedUnalEmail,
+} from '../../../lib/auth';
 
-export default function handler(_req: NextApiRequest, res: NextApiResponse) {
-  res.writeHead(303, { Location: '/landing?error=auth_disabled' });
+function redirect(res: NextApiResponse, destination: string): void {
+  res.writeHead(303, { Location: destination });
   res.end();
+}
+
+function buildCookie(name: string, value: string, maxAgeSeconds: number): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+}
+
+function clearCookie(name: string): string {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
+}
+
+function getQueryValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    res.status(405).end('Method Not Allowed');
+    return;
+  }
+
+  const stateFromQuery = getQueryValue(req.query.state).trim();
+  const code = getQueryValue(req.query.code).trim();
+  const stateFromCookie = String(req.cookies[getAuthStateCookieName()] ?? '').trim();
+
+  if (!stateFromQuery || !code || !stateFromCookie || stateFromQuery !== stateFromCookie) {
+    res.setHeader('Set-Cookie', clearCookie(getAuthStateCookieName()));
+    redirect(res, '/landing?error=auth_failed');
+    return;
+  }
+
+  try {
+    const tokens = await exchangeCodeForTokens(code);
+    const auth0User = await fetchAuth0UserInfo(tokens.access_token);
+    const email = String(auth0User.email ?? '').trim().toLowerCase();
+
+    if (!email || !isAllowedUnalEmail(email)) {
+      res.setHeader('Set-Cookie', [
+        clearCookie(getAuthStateCookieName()),
+        clearCookie(getSessionCookieName()),
+      ]);
+      redirect(res, '/landing?error=forbidden_email_domain');
+      return;
+    }
+
+    const sessionToken = await createSignedSessionToken({
+      sub: auth0User.sub,
+      email,
+      name: auth0User.name?.trim() || email,
+      picture: auth0User.picture,
+    });
+
+    res.setHeader('Set-Cookie', [
+      clearCookie(getAuthStateCookieName()),
+      buildCookie(getSessionCookieName(), sessionToken, 60 * 60 * 8),
+    ]);
+
+    redirect(res, '/');
+    return;
+  } catch {
+    res.setHeader('Set-Cookie', clearCookie(getAuthStateCookieName()));
+    redirect(res, '/landing?error=auth_failed');
+    return;
+  }
 }

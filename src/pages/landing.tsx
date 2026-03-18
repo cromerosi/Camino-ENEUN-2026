@@ -2,10 +2,9 @@ import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import Layout from '../layouts/Layout';
 
 const errorMessages: Record<string, string> = {
-  missing_fields: 'Debes ingresar usuario y documento para continuar.',
-  invalid_credentials: 'Usuario o documento incorrecto. Intenta nuevamente.',
   auth_failed: 'No fue posible completar la autenticación. Intenta de nuevo.',
   auth_disabled: 'La autenticación con Auth0 está deshabilitada temporalmente.',
+  forbidden_email_domain: 'Solo se permiten correos institucionales @unal.edu.co.',
 };
 
 interface LandingProps {
@@ -27,8 +26,8 @@ export default function LandingPage({
           <p className="text-xs uppercase tracking-[0.5em] text-emerald-300">ENEUN 2026</p>
           <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Landing de acceso</h1>
           <p className="mx-auto mt-6 max-w-2xl text-base text-slate-300">
-            Ingresa con tu usuario institucional para visualizar tu proceso.
-            Usuario: solo la parte antes de @unal.edu.co. Contraseña: tu número de documento.
+            Inicia sesión con Auth0 para visualizar tu proceso.
+            Solo se permiten cuentas institucionales con dominio @unal.edu.co.
           </p>
 
           {errorMessage && (
@@ -37,45 +36,16 @@ export default function LandingPage({
             </div>
           )}
 
-          <form method="POST" action="/api/auth/login" className="mx-auto mt-10 w-full max-w-xl space-y-4 text-left">
-            <label className="block">
-              <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Usuario</span>
-              <div className="relative">
-                <input
-                  type="text"
-                  name="username"
-                  autoComplete="username"
-                  placeholder="Usuario institucional"
-                  required
-                  className="w-full rounded-xl border border-white/15 bg-slate-900/70 px-4 py-3 pr-36 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/60"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-slate-400">
-                  @unal.edu.co
-                </span>
-              </div>
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-xs uppercase tracking-[0.2em] text-slate-400">Contraseña</span>
-              <input
-                type="password"
-                name="document"
-                autoComplete="current-password"
-                placeholder="Número de documento"
-                required
-                className="w-full rounded-xl border border-white/15 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/60"
-              />
-            </label>
-
-            <button
-              type="submit"
+          <div className="mx-auto mt-10 w-full max-w-xl">
+            <a
+              href="/api/auth/login"
               className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-8 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-300"
             >
-              Iniciar sesión
-            </button>
+              Continuar con Auth0
+            </a>
 
-            <p className="text-center text-xs uppercase tracking-[0.2em] text-slate-500">Solo dominio @unal.edu.co</p>
-          </form>
+            <p className="mt-4 text-center text-xs uppercase tracking-[0.2em] text-slate-500">Solo dominio @unal.edu.co</p>
+          </div>
         </section>
       </main>
     </Layout>
