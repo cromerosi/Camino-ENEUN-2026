@@ -1,4 +1,4 @@
-import { sql } from './db';
+import { getSql } from './db';
 
 export interface ParticipantViewModel {
   fullName: string;
@@ -61,6 +61,7 @@ function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
 
 async function getCommitteeByEmail(email: string): Promise<string> {
   try {
+    const sql = getSql();
     const rows = (await sql`
       SELECT confirm_answers
       FROM registrations
@@ -88,6 +89,7 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
   };
 
   try {
+    const sql = getSql();
     const registrationRows = (await sql`
       SELECT
         first_name,
@@ -151,6 +153,7 @@ export async function authenticateWithDocument(
   const email = `${localUsername}@unal.edu.co`;
 
   try {
+    const sql = getSql();
     const registrationRows = (await sql`
       SELECT
         email,

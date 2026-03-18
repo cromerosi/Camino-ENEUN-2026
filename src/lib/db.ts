@@ -1,9 +1,17 @@
 import postgres from "postgres";
 
-const databaseUrl = process.env.DATABASE_URL;
+let sqlClient: ReturnType<typeof postgres> | null = null;
 
-if (!databaseUrl) {
-	throw new Error('Missing required environment variable: DATABASE_URL');
+export function getSql() {
+	if (sqlClient) {
+		return sqlClient;
+	}
+
+	const databaseUrl = process.env.DATABASE_URL;
+	if (!databaseUrl) {
+		throw new Error('Missing required environment variable: DATABASE_URL');
+	}
+
+	sqlClient = postgres(databaseUrl);
+	return sqlClient;
 }
-
-export const sql = postgres(databaseUrl);
