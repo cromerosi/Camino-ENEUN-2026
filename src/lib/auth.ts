@@ -94,6 +94,7 @@ export function getAuth0AuthorizeUrl(state: string, codeChallenge?: string): str
   const domain = getEnv('AUTH0_DOMAIN');
   const clientId = getEnv('AUTH0_CLIENT_ID');
   const redirectUri = getEnv('AUTH0_CALLBACK_URL');
+  const connection = process.env.AUTH0_CONNECTION?.trim() || 'google-oauth2';
 
   const url = new URL(`https://${domain}/authorize`);
   url.searchParams.set('response_type', 'code');
@@ -101,6 +102,7 @@ export function getAuth0AuthorizeUrl(state: string, codeChallenge?: string): str
   url.searchParams.set('redirect_uri', redirectUri);
   url.searchParams.set('scope', 'openid profile email');
   url.searchParams.set('state', state);
+  url.searchParams.set('connection', connection);
   url.searchParams.set('prompt', 'login');
   if (codeChallenge) {
     url.searchParams.set('code_challenge', codeChallenge);
