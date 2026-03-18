@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.1",
   "engines": {
-    "node": ">=22.x"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "next dev",
