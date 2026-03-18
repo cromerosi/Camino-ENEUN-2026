@@ -3,6 +3,7 @@ import {
   createSignedSessionToken,
   exchangeCodeForTokens,
   fetchAuth0UserInfo,
+  getAuthPkceCookieName,
   getAuthStateCookieName,
   getSessionCookieName,
   isAllowedUnalEmail,
@@ -37,21 +38,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const stateFromQuery = getQueryValue(req.query.state).trim();
   const code = getQueryValue(req.query.code).trim();
   const stateFromCookie = String(req.cookies[getAuthStateCookieName()] ?? '').trim();
+  const codeVerifier = String(req.cookies[getAuthPkceCookieName()] ?? '').trim();
 
-  if (!stateFromQuery || !code || !stateFromCookie || stateFromQuery !== stateFromCookie) {
-    res.setHeader('Set-Cookie', clearCookie(getAuthStateCookieName()));
+  if (!stateFromQuery || !code || !stateFromCookie || !codeVerifier || stateFromQuery !== stateFromCookie) {
+    res.setHeader('Set-Cookie', [
+      clearCookie(getAuthStateCookieName()),
+      clearCookie(getAuthPkceCookieName()),
+    ]);
     redirect(res, '/landing?error=auth_failed');
     return;
   }
 
   try {
-    const tokens = await exchangeCodeForTokens(code);
+    const tokens = await exchangeCodeForTokens(code, codeVerifier);
     const auth0User = await fetchAuth0UserInfo(tokens.access_token);
     const email = String(auth0User.email ?? '').trim().toLowerCase();
 
     if (!email || !isAllowedUnalEmail(email)) {
       res.setHeader('Set-Cookie', [
         clearCookie(getAuthStateCookieName()),
+        clearCookie(getAuthPkceCookieName()),
         clearCookie(getSessionCookieName()),
       ]);
       redirect(res, '/landing?error=forbidden_email_domain');
@@ -67,13 +73,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     res.setHeader('Set-Cookie', [
       clearCookie(getAuthStateCookieName()),
+      clearCookie(getAuthPkceCookieName()),
       buildCookie(getSessionCookieName(), sessionToken, 60 * 60 * 8),
     ]);
 
     redirect(res, '/');
     return;
   } catch {
-    res.setHeader('Set-Cookie', clearCookie(getAuthStateCookieName()));
+    res.setHeader('Set-Cookie', [
+      clearCookie(getAuthStateCookieName()),
+      clearCookie(getAuthPkceCookieName()),
+    ]);
     redirect(res, '/landing?error=auth_failed');
     return;
   }

@@ -1,7 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   createAuthState,
+  createPkceCodeChallenge,
+  createPkceCodeVerifier,
   getAuth0AuthorizeUrl,
+  getAuthPkceCookieName,
   getAuthStateCookieName,
 } from '../../../lib/auth';
 
@@ -24,9 +27,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const state = createAuthState();
-    const authorizeUrl = getAuth0AuthorizeUrl(state);
+    const codeVerifier = createPkceCodeVerifier();
+    const codeChallenge = await createPkceCodeChallenge(codeVerifier);
+    const authorizeUrl = getAuth0AuthorizeUrl(state, codeChallenge);
 
-    res.setHeader('Set-Cookie', buildCookie(getAuthStateCookieName(), state, 60 * 10));
+    res.setHeader('Set-Cookie', [
+      buildCookie(getAuthStateCookieName(), state, 60 * 10),
+      buildCookie(getAuthPkceCookieName(), codeVerifier, 60 * 10),
+    ]);
     redirect(res, authorizeUrl);
     return;
   } catch {

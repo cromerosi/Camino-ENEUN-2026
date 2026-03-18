@@ -1,5 +1,6 @@
 const SESSION_COOKIE_NAME = 'eneun_session';
 const AUTH_STATE_COOKIE_NAME = 'eneun_auth_state';
+const AUTH_PKCE_COOKIE_NAME = 'eneun_auth_pkce';
 
 const encoder = new TextEncoder();
 
@@ -79,7 +80,17 @@ export function createAuthState(): string {
   return Buffer.from(random).toString('base64url');
 }
 
-export function getAuth0AuthorizeUrl(state: string): string {
+export function createPkceCodeVerifier(): string {
+  const random = crypto.getRandomValues(new Uint8Array(48));
+  return Buffer.from(random).toString('base64url');
+}
+
+export async function createPkceCodeChallenge(codeVerifier: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(codeVerifier));
+  return Buffer.from(digest).toString('base64url');
+}
+
+export function getAuth0AuthorizeUrl(state: string, codeChallenge?: string): string {
   const domain = getEnv('AUTH0_DOMAIN');
   const clientId = getEnv('AUTH0_CLIENT_ID');
   const redirectUri = getEnv('AUTH0_CALLBACK_URL');
@@ -91,28 +102,45 @@ export function getAuth0AuthorizeUrl(state: string): string {
   url.searchParams.set('scope', 'openid profile email');
   url.searchParams.set('state', state);
   url.searchParams.set('prompt', 'login');
+  if (codeChallenge) {
+    url.searchParams.set('code_challenge', codeChallenge);
+    url.searchParams.set('code_challenge_method', 'S256');
+  }
 
   return url.toString();
 }
 
-export async function exchangeCodeForTokens(code: string): Promise<Auth0TokenResponse> {
+export async function exchangeCodeForTokens(code: string, codeVerifier?: string): Promise<Auth0TokenResponse> {
   const domain = getEnv('AUTH0_DOMAIN');
   const clientId = getEnv('AUTH0_CLIENT_ID');
-  const clientSecret = getEnv('AUTH0_CLIENT_SECRET');
+  const clientSecret = process.env.AUTH0_CLIENT_SECRET?.trim();
   const redirectUri = getEnv('AUTH0_CALLBACK_URL');
+
+  if (!clientSecret && !codeVerifier) {
+    throw new Error('Missing Auth0 credentials: provide AUTH0_CLIENT_SECRET or PKCE code verifier.');
+  }
+
+  const body: Record<string, string> = {
+    grant_type: 'authorization_code',
+    client_id: clientId,
+    code,
+    redirect_uri: redirectUri,
+  };
+
+  if (clientSecret) {
+    body.client_secret = clientSecret;
+  }
+
+  if (codeVerifier) {
+    body.code_verifier = codeVerifier;
+  }
 
   const response = await fetch(`https://${domain}/oauth/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      grant_type: 'authorization_code',
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) {
@@ -188,6 +216,10 @@ export function getSessionCookieName(): string {
 
 export function getAuthStateCookieName(): string {
   return AUTH_STATE_COOKIE_NAME;
+}
+
+export function getAuthPkceCookieName(): string {
+  return AUTH_PKCE_COOKIE_NAME;
 }
 
 export function getAuthCookieOptions(maxAgeSeconds: number) {
