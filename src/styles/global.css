@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+html,
+body,
+#__next {
+	width: 100%;
+	min-height: 100%;
+}
+
+html,
+body {
+	margin: 0;
+}
+
+body {
+	font-family: 'Space Grotesk', sans-serif;
+}
