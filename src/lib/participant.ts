@@ -117,10 +117,6 @@ function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
   return normalized.length > 0 ? normalized.join(', ') : 'Sin comité asignado';
 }
 
-function hasCommitteeAssigned(confirmAnswers: unknown): boolean {
-  return parseCommitteeFromConfirmAnswers(confirmAnswers) !== 'Sin comité asignado';
-}
-
 function toJourneyDate(value: string | Date | null | undefined): string | null {
   if (!value) {
     return null;
@@ -147,11 +143,8 @@ function buildJourneyStepsFromRegistration(registration?: RegistrationRow): Eneu
 
   const preinscriptionDate = toJourneyDate(registration.registered_at);
   const preconfirmationDate = toJourneyDate(registration.confirm_submitted_at);
-  const finalFormDate = toJourneyDate(registration.final_submitted_at);
 
   const hasPreconfirmation = Boolean(registration.confirm_submitted_at);
-  const hasFinalForm = Boolean(registration.final_submitted_at);
-  const committeeAssigned = hasCommitteeAssigned(registration.confirm_answers);
 
   return [
     {
@@ -180,14 +173,8 @@ function buildJourneyStepsFromRegistration(registration?: RegistrationRow): Eneu
     },
     {
       label: 'Formulario final',
-      status: !hasPreconfirmation ? 'gray' : hasFinalForm ? 'green' : 'red',
-      detail: !hasPreconfirmation
-        ? 'Se habilita tras preconfirmación'
-        : hasFinalForm
-          ? finalFormDate
-            ? `Completado el ${finalFormDate}`
-            : 'Completado'
-          : 'Pendiente por completar',
+      status: 'gray',
+      detail: 'Todavía no está habilitado',
     },
   ];
 }

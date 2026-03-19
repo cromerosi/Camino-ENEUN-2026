@@ -207,7 +207,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
   const participant = await getParticipantByEmail(authUser.email);
   const journeySteps = await getJourneyStepsByEmail(authUser.email);
   const progressPercent = Math.round(
-    (journeySteps.filter((step) => step.status !== 'gray').length / journeySteps.length) * 100,
+    (journeySteps.filter((step) => step.status === 'green').length / journeySteps.length) * 100,
   );
 
   return {
