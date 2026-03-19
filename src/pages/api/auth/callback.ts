@@ -37,8 +37,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const stateFromQuery = getQueryValue(req.query.state).trim();
   const code = getQueryValue(req.query.code).trim();
+  const auth0Error = getQueryValue(req.query.error).trim();
+  const auth0ErrorDescription = getQueryValue(req.query.error_description).trim().toLowerCase();
   const stateFromCookie = String(req.cookies[getAuthStateCookieName()] ?? '').trim();
   const codeVerifier = String(req.cookies[getAuthPkceCookieName()] ?? '').trim();
+
+  if (auth0Error) {
+    const isMissingAuth0Session =
+      auth0Error === 'invalid_request' && auth0ErrorDescription.includes("couldn't find your session");
+    redirect(res, isMissingAuth0Session ? '/landing?error=auth0_session_missing' : '/landing?error=auth_failed');
+    return;
+  }
 
   if (!stateFromQuery || !code || !stateFromCookie || !codeVerifier || stateFromQuery !== stateFromCookie) {
     res.setHeader('Set-Cookie', [

@@ -1,10 +1,13 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import { FormEvent, useState } from 'react';
 import Layout from '../layouts/Layout';
 
 const errorMessages: Record<string, string> = {
   auth_failed: 'No fue posible completar la autenticación. Intenta de nuevo.',
   auth_disabled: 'La autenticación con Auth0 está deshabilitada temporalmente.',
   forbidden_email_domain: 'Solo se permiten correos institucionales @unal.edu.co.',
+  auth0_session_missing:
+    'No se encontró la sesión de autenticación. Esto puede pasar si se abre más de un diálogo de login o se refresca la pantalla durante el ingreso. Intenta de nuevo desde la aplicación.',
 };
 
 interface LandingProps {
@@ -14,6 +17,16 @@ interface LandingProps {
 export default function LandingPage({
   errorMessage,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    if (isSubmitting) {
+      event.preventDefault();
+      return;
+    }
+    setIsSubmitting(true);
+  }
+
   return (
     <Layout>
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-16 lg:px-12">
@@ -37,12 +50,16 @@ export default function LandingPage({
           )}
 
           <div className="mx-auto mt-10 w-full max-w-xl">
-            <a
-              href="/api/auth/login"
-              className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-8 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-300"
-            >
-              Continuar con Auth0
-            </a>
+            <form action="/api/auth/login" method="get" onSubmit={handleLoginSubmit}>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex w-full items-center justify-center rounded-full bg-emerald-400 px-8 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-emerald-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                aria-disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Redirigiendo...' : 'Continuar con Auth0'}
+              </button>
+            </form>
 
             <p className="mt-4 text-center text-xs uppercase tracking-[0.2em] text-slate-500">Solo dominio @unal.edu.co</p>
           </div>
