@@ -115,7 +115,7 @@ export default function DashboardPage({
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.faculty}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampamiento</dt>
+                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampada</dt>
                   <dd className="mt-2 text-lg font-semibold text-white">{campingCopy}</dd>
                 </div>
                 <div>
