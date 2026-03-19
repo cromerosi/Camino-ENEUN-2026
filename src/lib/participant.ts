@@ -37,6 +37,29 @@ function parseCamping(ticketType: string | null): boolean {
   return /camp|acamp|carpa/i.test(ticketType);
 }
 
+function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean {
+  if (!confirmAnswers || typeof confirmAnswers !== 'object' || Array.isArray(confirmAnswers)) {
+    return false;
+  }
+
+  const record = confirmAnswers as Record<string, unknown>;
+  const baseHospedajeSituacion = record.base_hospedaje_situacion;
+
+  // Si base_hospedaje_situacion existe, verifica si el valor indica que acampa.
+  if (baseHospedajeSituacion) {
+    const value = Array.isArray(baseHospedajeSituacion)
+      ? baseHospedajeSituacion[0]
+      : baseHospedajeSituacion;
+
+    if (typeof value === 'string') {
+      // Retorna true solo si la opcion es "Planea acampar".
+      return /planea\s+acampar/i.test(value);
+    }
+  }
+
+  return false;
+}
+
 function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
   if (!confirmAnswers || typeof confirmAnswers !== 'object' || Array.isArray(confirmAnswers)) {
     return 'Sin comité asignado';
@@ -122,7 +145,9 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
       documentNumber: registration.document_number?.trim() || 'No disponible',
       site: registration.university?.trim() || 'No disponible',
       faculty: registration.faculty?.trim() || 'No disponible',
-      camping: parseCamping(registration.ticket_type),
+      camping:
+        parseCampingFromConfirmAnswers(registration.confirm_answers) ||
+        parseCamping(registration.ticket_type),
       committee: parseCommitteeFromConfirmAnswers(registration.confirm_answers),
       uuid: registration.uuid?.trim() || 'No disponible',
     };
