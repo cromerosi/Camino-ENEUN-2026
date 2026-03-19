@@ -37,27 +37,58 @@ function parseCamping(ticketType: string | null): boolean {
   return /camp|acamp|carpa/i.test(ticketType);
 }
 
-function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean {
+function normalizeAnswer(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean | null {
   if (!confirmAnswers || typeof confirmAnswers !== 'object' || Array.isArray(confirmAnswers)) {
-    return false;
+    return null;
   }
 
   const record = confirmAnswers as Record<string, unknown>;
   const baseHospedajeSituacion = record.base_hospedaje_situacion;
 
-  // Si base_hospedaje_situacion existe, verifica si el valor indica que acampa.
-  if (baseHospedajeSituacion) {
-    const value = Array.isArray(baseHospedajeSituacion)
-      ? baseHospedajeSituacion[0]
-      : baseHospedajeSituacion;
-
-    if (typeof value === 'string') {
-      // Retorna true solo si la opcion es "Planea acampar".
-      return /planea\s+acampar/i.test(value);
-    }
+  if (!baseHospedajeSituacion) {
+    return null;
   }
 
-  return false;
+  const value = Array.isArray(baseHospedajeSituacion)
+    ? baseHospedajeSituacion[0]
+    : baseHospedajeSituacion;
+
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = normalizeAnswer(value);
+
+  if (normalizedValue === 'planea acampar') {
+    return true;
+  }
+
+  if (
+    normalizedValue === 'ya cuenta con hospedaje y/o reservas' ||
+    normalizedValue === 'esta en busqueda de hospedaje y no planea acampar'
+  ) {
+    return false;
+  }
+
+  // Si llega otro texto inesperado, no forzamos valor para permitir fallback por ticket_type.
+  return null;
+}
+
+function resolveCamping(ticketType: string | null, confirmAnswers: unknown): boolean {
+  const fromConfirmAnswers = parseCampingFromConfirmAnswers(confirmAnswers);
+  if (fromConfirmAnswers !== null) {
+    return fromConfirmAnswers;
+  }
+
+  return parseCamping(ticketType);
 }
 
 function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
@@ -145,9 +176,7 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
       documentNumber: registration.document_number?.trim() || 'No disponible',
       site: registration.university?.trim() || 'No disponible',
       faculty: registration.faculty?.trim() || 'No disponible',
-      camping:
-        parseCampingFromConfirmAnswers(registration.confirm_answers) ||
-        parseCamping(registration.ticket_type),
+      camping: resolveCamping(registration.ticket_type, registration.confirm_answers),
       committee: parseCommitteeFromConfirmAnswers(registration.confirm_answers),
       uuid: registration.uuid?.trim() || 'No disponible',
     };
