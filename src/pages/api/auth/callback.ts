@@ -35,6 +35,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
+  res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+
   const stateFromQuery = getQueryValue(req.query.state).trim();
   const code = getQueryValue(req.query.code).trim();
   const auth0Error = getQueryValue(req.query.error).trim();
@@ -45,6 +48,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (auth0Error) {
     const isMissingAuth0Session =
       auth0Error === 'invalid_request' && auth0ErrorDescription.includes("couldn't find your session");
+    res.setHeader('Set-Cookie', [
+      clearCookie(getAuthStateCookieName()),
+      clearCookie(getAuthPkceCookieName()),
+    ]);
     redirect(res, isMissingAuth0Session ? '/landing?error=auth0_session_missing' : '/landing?error=auth_failed');
     return;
   }

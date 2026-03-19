@@ -7,7 +7,7 @@ const errorMessages: Record<string, string> = {
   auth_disabled: 'La autenticación con Auth0 está deshabilitada temporalmente.',
   forbidden_email_domain: 'Solo se permiten correos institucionales @unal.edu.co.',
   auth0_session_missing:
-    'No se encontró la sesión de autenticación. Esto puede pasar si se abre más de un diálogo de login o se refresca la pantalla durante el ingreso. Intenta de nuevo desde la aplicación.',
+    'No se encontró la sesión de autenticación. Esto puede pasar si se abre más de un diálogo de login, se refresca la pantalla durante el ingreso o se cambia entre modo escritorio y modo normal en Chrome. Intenta de nuevo desde la aplicación.',
 };
 
 interface LandingProps {
@@ -42,6 +42,9 @@ export default function LandingPage({
             Inicia sesión con Auth0 para visualizar tu proceso.
             Solo se permiten cuentas institucionales con dominio @unal.edu.co.
           </p>
+          <p className="mx-auto mt-3 max-w-2xl text-xs uppercase tracking-[0.12em] text-slate-400">
+            Durante el login en celular, evita cambiar entre modo escritorio y modo normal de Chrome.
+          </p>
 
           {errorMessage && (
             <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm text-rose-200">
@@ -70,6 +73,9 @@ export default function LandingPage({
 }
 
 export const getServerSideProps: GetServerSideProps<LandingProps> = async (context) => {
+  context.res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+  context.res.setHeader('Pragma', 'no-cache');
+
   const error = typeof context.query.error === 'string' ? context.query.error : null;
   return {
     props: {

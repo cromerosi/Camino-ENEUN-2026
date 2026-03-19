@@ -26,6 +26,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+
     const state = createAuthState();
     const codeVerifier = createPkceCodeVerifier();
     const codeChallenge = await createPkceCodeChallenge(codeVerifier);
