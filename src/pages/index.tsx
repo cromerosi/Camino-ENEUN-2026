@@ -1,12 +1,12 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import Layout from '../layouts/Layout';
-import {
-  ENEUN_DEFAULT_JOURNEY_STEPS,
-  type EneunNodeStatus,
-  type EneunJourneyStepState,
-} from '../lib/eneun-schema';
+import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
-import { getParticipantByEmail, type ParticipantViewModel } from '../lib/participant';
+import {
+  getJourneyStepsByEmail,
+  getParticipantByEmail,
+  type ParticipantViewModel,
+} from '../lib/participant';
 
 const STEP_LABELS: Record<string, string> = {
   Preinscripcion: 'Preinscripción',
@@ -205,7 +205,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
   }
 
   const participant = await getParticipantByEmail(authUser.email);
-  const journeySteps = ENEUN_DEFAULT_JOURNEY_STEPS;
+  const journeySteps = await getJourneyStepsByEmail(authUser.email);
   const progressPercent = Math.round(
     (journeySteps.filter((step) => step.status !== 'gray').length / journeySteps.length) * 100,
   );

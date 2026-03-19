@@ -1,4 +1,5 @@
 import { getSql } from './db';
+import { ENEUN_PROCESS_NODES, type EneunJourneyStepState } from './eneun-schema';
 
 export interface ParticipantViewModel {
   fullName: string;
@@ -21,7 +22,10 @@ interface RegistrationRow {
   faculty: string | null;
   ticket_type: string | null;
   uuid?: string | null;
+  registered_at?: string | Date | null;
   confirm_answers?: unknown;
+  confirm_submitted_at?: string | Date | null;
+  final_submitted_at?: string | Date | null;
 }
 
 export interface LocalAuthUser {
@@ -113,6 +117,81 @@ function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
   return normalized.length > 0 ? normalized.join(', ') : 'Sin comité asignado';
 }
 
+function hasCommitteeAssigned(confirmAnswers: unknown): boolean {
+  return parseCommitteeFromConfirmAnswers(confirmAnswers) !== 'Sin comité asignado';
+}
+
+function toJourneyDate(value: string | Date | null | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const day = `${date.getDate()}`.padStart(2, '0');
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  return `${day}·${month}`;
+}
+
+function buildJourneyStepsFromRegistration(registration?: RegistrationRow): EneunJourneyStepState[] {
+  if (!registration) {
+    return ENEUN_PROCESS_NODES.map((label) => ({
+      label,
+      status: 'gray',
+      detail: 'Sin iniciar',
+    }));
+  }
+
+  const preinscriptionDate = toJourneyDate(registration.registered_at);
+  const preconfirmationDate = toJourneyDate(registration.confirm_submitted_at);
+  const finalFormDate = toJourneyDate(registration.final_submitted_at);
+
+  const hasPreconfirmation = Boolean(registration.confirm_submitted_at);
+  const hasFinalForm = Boolean(registration.final_submitted_at);
+  const committeeAssigned = hasCommitteeAssigned(registration.confirm_answers);
+
+  return [
+    {
+      label: 'Preinscripcion',
+      status: 'green',
+      detail: preinscriptionDate ? `Completado el ${preinscriptionDate}` : 'Completado',
+    },
+    {
+      label: 'Preconfirmacion',
+      status: hasPreconfirmation ? 'green' : 'red',
+      detail: hasPreconfirmation
+        ? preconfirmationDate
+          ? `Confirmado el ${preconfirmationDate}`
+          : 'Confirmado'
+        : 'Pendiente de preconfirmación',
+    },
+    {
+      label: 'Validacion de sede de origen',
+      status: 'gray',
+      detail: 'Todavía no está habilitado',
+    },
+    {
+      label: 'Capacitaciones de la plataforma',
+      status: 'gray',
+      detail: 'Todavía no está habilitado',
+    },
+    {
+      label: 'Formulario final',
+      status: !hasPreconfirmation ? 'gray' : hasFinalForm ? 'green' : 'red',
+      detail: !hasPreconfirmation
+        ? 'Se habilita tras preconfirmación'
+        : hasFinalForm
+          ? finalFormDate
+            ? `Completado el ${finalFormDate}`
+            : 'Completado'
+          : 'Pendiente por completar',
+    },
+  ];
+}
+
 async function getCommitteeByEmail(email: string): Promise<string> {
   try {
     const sql = getSql();
@@ -182,6 +261,31 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
     };
   } catch {
     return fallback;
+  }
+}
+
+export async function getJourneyStepsByEmail(email: string): Promise<EneunJourneyStepState[]> {
+  try {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT
+        registered_at,
+        confirm_answers,
+        confirm_submitted_at,
+        final_submitted_at
+      FROM registrations
+      WHERE lower(trim(email)) = lower(trim(${email}))
+      ORDER BY registered_at DESC
+      LIMIT 1
+    `) as RegistrationRow[];
+
+    return buildJourneyStepsFromRegistration(rows[0]);
+  } catch {
+    return ENEUN_PROCESS_NODES.map((label) => ({
+      label,
+      status: 'gray',
+      detail: 'Sin iniciar',
+    }));
   }
 }
 
