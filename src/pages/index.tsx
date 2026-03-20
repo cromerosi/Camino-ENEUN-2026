@@ -152,7 +152,10 @@ export default function DashboardPage({
               <div className="relative mt-10">
                 <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
                   {journeySteps.map((step, index) => {
-                    const style = getStatusStyle(step.status);
+                    const style =
+                      step.label === 'Validacion de sede de origen'
+                        ? STATUS_STYLES.purple
+                        : getStatusStyle(step.status);
                     return (
                       <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
                         <div

@@ -156,25 +156,33 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     return validations.every(v => completedIds.has(v.id));
   };
 
+  const columnCount = Math.max(4, validations.length + 2);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-300 font-sans selection:bg-emerald-500/30">
+    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
       <Head>
         <title>Panel Sede {adminCampus} | ENEUN 2026</title>
       </Head>
 
-      <nav className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-          <div>
-            <h1 className="text-xl font-bold text-white tracking-wide">VALIDACIONES DE SEDE</h1>
-            <p className="text-xs text-emerald-400 font-medium uppercase tracking-[0.2em]">Sede {adminCampus}</p>
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-24 right-6 h-80 w-80 rounded-full bg-violet-500/20 blur-[145px]"></div>
+        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-emerald-500/15 blur-[170px]"></div>
+      </div>
+
+      <nav className="sticky top-0 z-50 border-b border-white/10 bg-slate-950/70 backdrop-blur-2xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-[0.35em] text-violet-300">Panel administrativo</p>
+            <h1 className="mt-2 text-xl font-semibold tracking-wide text-white sm:text-2xl">Validaciones de sede</h1>
+            <p className="mt-1 text-sm text-slate-400">Sede {adminCampus}</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="text-sm font-medium text-slate-400 bg-slate-800/50 px-4 py-2 rounded-full border border-slate-700">
-              Administrador: {adminName}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.18em] text-slate-300 sm:text-sm sm:tracking-[0.28em]">
+              Admin: {adminName}
             </div>
             <button
               onClick={handleLogout}
-              className="text-xs font-semibold uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition"
+              className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-violet-200 transition hover:border-violet-300/60 hover:text-violet-100"
             >
               Cerrar sesión
             </button>
@@ -182,59 +190,63 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold text-white mb-2">Crear nueva validación</h2>
-            <div className="flex items-center gap-3">
+      <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Gestión</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Crear nueva validación</h2>
+              <p className="mt-1 text-sm text-slate-400">Puedes crear hasta 7 validaciones para marcar el cumplimiento de cada estudiante.</p>
+            </div>
+            <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl">
               <input
                 type="text"
                 placeholder="Nombre de validación..."
                 value={newValName}
                 onChange={(e) => setNewValName(e.target.value)}
                 disabled={validations.length >= 7}
-                className="w-64 rounded bg-slate-900 border-2 border-slate-700 px-3 py-2 text-sm text-white placeholder-slate-500 outline-none transition focus:border-emerald-500 disabled:opacity-50"
+                className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
                 onClick={handleCreateValidation}
                 disabled={!newValName.trim() || validations.length >= 7}
-                className="rounded bg-slate-800 border-2 border-slate-700 px-4 py-2 text-sm font-bold text-rose-400 transition hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider whitespace-nowrap"
+                className="rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                CREAR VALIDACIÓN
+                Crear validación
               </button>
             </div>
-            {validations.length >= 7 && (
-              <p className="text-rose-400 text-xs mt-2">Límite máximo de validaciones (7) alcanzado.</p>
-            )}
           </div>
-        </div>
+          {validations.length >= 7 && (
+            <p className="mt-3 text-xs text-rose-300">Límite máximo de validaciones (7) alcanzado.</p>
+          )}
+        </section>
 
         {loading ? (
           <div className="flex justify-center py-20">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-700 border-t-emerald-500"></div>
+            <div className="h-9 w-9 animate-spin rounded-full border-4 border-slate-700 border-t-violet-400"></div>
           </div>
         ) : (
-          <div className="w-full overflow-x-auto overflow-y-auto max-h-[65vh] rounded border-2 border-rose-900/50 bg-slate-900 shadow-xl relative">
-            <table className="w-full text-left text-sm whitespace-nowrap border-collapse">
-              <thead className="bg-[#570000] text-rose-100 font-semibold uppercase text-xs sticky top-0 z-10 shadow-md">
+          <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
+            <div className="w-full overflow-x-auto overflow-y-auto max-h-[68vh]">
+            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-900/95 text-violet-100 shadow-md backdrop-blur">
                 <tr>
-                  <th className="px-6 py-4 border-2 border-rose-900 w-1/4 bg-[#570000]">Lista de estudiantes</th>
+                  <th className="w-1/4 border-b border-white/15 px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em]">Lista de estudiantes</th>
                   {validations.map((val) => (
-                    <th key={val.id} className="px-4 py-4 border-2 border-rose-900 text-center bg-[#570000]">
-                      <div className="truncate max-w-[120px] mx-auto text-white" title={val.name}>{val.name}</div>
+                    <th key={val.id} className="border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.14em]">
+                      <div className="mx-auto max-w-[140px] truncate text-white" title={val.name}>{val.name}</div>
                     </th>
                   ))}
-                  {/* Empty cells up to 7 as per design to maintain consistent look if needed, but dynamically mapping validations is cleaner */}
                   {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
-                     <th key={`empty-${i}`} className="px-4 py-4 border-2 border-rose-900 text-center text-transparent bg-[#570000]">VALID</th>
+                     <th key={`empty-${i}`} className="border-b border-white/15 px-4 py-4 text-center text-transparent">V</th>
                   ))}
-                  <th className="px-6 py-4 border-2 border-rose-900 text-center font-bold text-white w-32 bg-[#420000]">CUMPLE?</th>
+                  <th className="w-36 border-b border-white/15 px-6 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">Cumple</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-rose-900 bg-white">
+              <tbody className="bg-slate-950/45">
                 {students.length === 0 ? (
                   <tr>
-                    <td colSpan={Math.max(4, validations.length + 2)} className="px-6 py-12 text-center text-rose-900 font-medium">
+                    <td colSpan={columnCount} className="px-6 py-12 text-center text-sm font-medium text-slate-300">
                       No hay estudiantes confirmados en esta sede aún o las tablas no han sido creadas.
                     </td>
                   </tr>
@@ -242,8 +254,8 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                   students.map((student, idx) => {
                     const isCumple = getStudentStatus(student);
                     return (
-                      <tr key={student.registration_id} className="transition-colors hover:bg-slate-50">
-                        <td className="px-6 py-5 font-bold text-rose-900 border-2 border-rose-900 uppercase">
+                      <tr key={student.registration_id} className={`${idx % 2 === 0 ? 'bg-white/0' : 'bg-white/5'} transition-colors hover:bg-violet-500/10`}>
+                        <td className="border-b border-white/10 px-6 py-5 font-semibold uppercase tracking-[0.08em] text-white">
                           {student.first_name} {student.last_name}
                         </td>
                         
@@ -252,7 +264,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                           const isChecked = studentVal ? studentVal.is_completed : false;
                           
                           return (
-                            <td key={val.id} className="px-4 py-4 border-2 border-rose-900 text-center">
+                            <td key={val.id} className="border-b border-white/10 px-4 py-4 text-center">
                               <label className="inline-flex items-center cursor-pointer p-2">
                                 <input
                                   type="checkbox"
@@ -260,9 +272,9 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                                   onChange={() => handleToggleValidation(student.registration_id, val.id, isChecked)}
                                   className="peer sr-only"
                                 />
-                                <div className="w-8 h-8 rounded-sm flex flex-shrink-0 items-center justify-center transition-all duration-200 border-4 border-rose-900 bg-white peer-checked:bg-white relative">
+                                <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border-2 border-violet-300/60 bg-slate-900 transition-all duration-200 peer-checked:border-violet-200 peer-checked:bg-violet-500/20">
                                   {isChecked && (
-                                    <div className="absolute inset-1 bg-rose-900 rounded-sm"></div>
+                                    <div className="absolute inset-1 rounded-sm bg-violet-300"></div>
                                   )}
                                 </div>
                               </label>
@@ -271,14 +283,14 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                         })}
 
                         {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
-                           <td key={`empty-cell-${i}`} className="px-4 py-4 border-2 border-rose-900 text-center bg-slate-50"></td>
+                           <td key={`empty-cell-${i}`} className="border-b border-white/10 px-4 py-4 text-center"></td>
                         ))}
                         
-                        <td className="px-6 py-4 border-2 border-rose-900 text-center bg-white">
+                        <td className="border-b border-white/10 px-6 py-4 text-center">
                           {validations.length > 0 && isCumple ? (
-                            <div className="w-12 h-6 border-4 border-rose-900 mx-auto bg-rose-900"></div>
+                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-emerald-300/60 bg-emerald-400/50"></div>
                           ) : (
-                            <div className="w-12 h-6 border-4 border-rose-900 mx-auto bg-white"></div>
+                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-slate-500 bg-slate-900"></div>
                           )}
                         </td>
                       </tr>
@@ -287,7 +299,8 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                 )}
               </tbody>
             </table>
-          </div>
+            </div>
+          </section>
         )}
       </main>
     </div>
