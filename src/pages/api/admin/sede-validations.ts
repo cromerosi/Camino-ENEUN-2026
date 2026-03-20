@@ -1,6 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSql } from '../../../lib/db';
-import { verifyAdminSessionToken, getAdminSessionCookieName } from '../../../lib/admin-auth';
+import { getAdminSessionCookieName, hasCampusAccess, verifyAdminSessionToken } from '../../../lib/admin-auth';
+
+function getCampusFromQuery(queryCampus: string | string[] | undefined): string | null {
+  const value = Array.isArray(queryCampus) ? queryCampus[0] : queryCampus;
+  if (!value) return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const token = req.cookies[getAdminSessionCookieName()];
@@ -11,16 +18,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const sql = getSql();
+  const requestedCampus = getCampusFromQuery(req.query.campus);
 
   if (req.method === 'GET') {
     try {
       const validations = await sql`
-        SELECT id, name, created_at
+        SELECT id, campus, name, created_at
         FROM sede_validations
-        WHERE campus = ${session.campus}
         ORDER BY created_at ASC
       `;
-      return res.status(200).json({ validations });
+
+      const filtered = validations.filter((validation) => {
+        const validationCampus = String((validation as { campus?: unknown }).campus ?? '');
+        return hasCampusAccess(session, validationCampus);
+      });
+
+      return res.status(200).json({ validations: filtered });
     } catch (error) {
        console.error('Error fetching sede_validations (table might not exist):', error);
        return res.status(200).json({ validations: [], error: 'Table may not exist yet' });
@@ -33,11 +46,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: 'El nombre es requerido' });
     }
 
+    const targetCampus = requestedCampus ?? session.campus;
+    if (!targetCampus) {
+      return res.status(400).json({ error: 'La sede objetivo es requerida' });
+    }
+
+    if (!hasCampusAccess(session, targetCampus)) {
+      return res.status(403).json({ error: 'Sin permisos para crear validaciones en esta sede' });
+    }
+
     try {
       const countRes = await sql`
         SELECT count(*) as count
         FROM sede_validations
-        WHERE campus = ${session.campus}
+        WHERE campus = ${targetCampus}
       `;
       const currentCount = parseInt(countRes[0].count, 10);
       if (currentCount >= 7) {
@@ -46,7 +68,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       const inserted = await sql`
         INSERT INTO sede_validations (campus, name)
-        VALUES (${session.campus}, ${name.trim()})
+        VALUES (${targetCampus}, ${name.trim()})
         RETURNING id, name, created_at
       `;
       
@@ -67,15 +89,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     try {
       const existing = await sql`
-        SELECT id
+        SELECT id, campus
         FROM sede_validations
         WHERE id = ${validationId}
-          AND campus = ${session.campus}
         LIMIT 1
       `;
 
       if (existing.length === 0) {
-        return res.status(404).json({ error: 'Validación no encontrada para esta sede' });
+        return res.status(404).json({ error: 'Validación no encontrada' });
+      }
+
+      const validationCampus = String(existing[0].campus ?? '');
+      if (!hasCampusAccess(session, validationCampus)) {
+        return res.status(403).json({ error: 'Sin permisos para eliminar esta validación' });
       }
 
       await sql`

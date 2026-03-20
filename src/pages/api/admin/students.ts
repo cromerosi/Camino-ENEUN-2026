@@ -1,6 +1,11 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSql } from '../../../lib/db';
-import { verifyAdminSessionToken, getAdminSessionCookieName } from '../../../lib/admin-auth';
+import {
+  canAccessAllCampuses,
+  getAdminSessionCookieName,
+  hasCampusAccess,
+  verifyAdminSessionToken,
+} from '../../../lib/admin-auth';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const token = req.cookies[getAdminSessionCookieName()];
@@ -21,6 +26,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           r.last_name, 
           r.email,
           r.document_number,
+          c.campus,
           COALESCE(
             (
               SELECT json_agg(
@@ -36,10 +42,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           ) as validations
         FROM registrations r
         JOIN confirmation_submissions c ON c.registration_id = r.id
-        WHERE c.campus = ${session.campus}
         ORDER BY r.last_name ASC, r.first_name ASC
       `;
-      return res.status(200).json({ students });
+
+      const filteredStudents = canAccessAllCampuses(session)
+        ? students
+        : students.filter((student) => hasCampusAccess(session, String(student.campus ?? '')));
+
+      return res.status(200).json({ students: filteredStudents });
     } catch (error) {
        console.error('Error fetching students or validations (table may not exist):', error);
        // Return empty array to not crash the UI if DB tables are pending creation
@@ -54,6 +64,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
+      const scopeRows = await sql`
+        SELECT c.campus
+        FROM registrations r
+        JOIN confirmation_submissions c
+          ON c.registration_id = r.id
+        JOIN sede_validations sv
+          ON sv.id = ${validation_id}
+        WHERE r.id = ${registration_id}
+          AND c.campus = sv.campus
+        LIMIT 1
+      `;
+
+      if (scopeRows.length === 0) {
+        return res.status(400).json({ error: 'Registro o validación inválidos para una misma sede' });
+      }
+
+      const targetCampus = String(scopeRows[0].campus ?? '');
+      if (!hasCampusAccess(session, targetCampus)) {
+        return res.status(403).json({ error: 'Sin permisos para modificar esta sede' });
+      }
+
       await sql`
         INSERT INTO student_sede_validations (registration_id, validation_id, is_completed)
         VALUES (${registration_id}, ${validation_id}, ${is_completed})

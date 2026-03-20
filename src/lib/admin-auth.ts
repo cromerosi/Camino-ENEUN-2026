@@ -44,7 +44,84 @@ export interface AdminSession {
   username: string;
   name: string;
   campus: string;
+  campuses: string[];
+  isSuper: boolean;
+  isGlobal: boolean;
   exp: number;
+}
+
+function normalizeCampusName(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+function normalizeCampusList(values: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const value of values) {
+    const normalized = normalizeCampusName(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function parseCampusField(rawCampus: unknown): string[] {
+  if (Array.isArray(rawCampus)) {
+    return rawCampus.filter((value): value is string => typeof value === 'string');
+  }
+
+  if (typeof rawCampus !== 'string') {
+    return [];
+  }
+
+  const trimmed = rawCampus.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((value): value is string => typeof value === 'string');
+      }
+    } catch {
+      // If parsing fails, treat as regular single-campus string.
+    }
+  }
+
+  return [trimmed];
+}
+
+export function resolveAdminCampuses(rawCampus: unknown, rawAssignedCampuses: unknown): string[] {
+  const baseCampuses = parseCampusField(rawCampus);
+  const assignedCampuses = Array.isArray(rawAssignedCampuses)
+    ? rawAssignedCampuses.filter((value): value is string => typeof value === 'string')
+    : [];
+
+  const merged = [...baseCampuses, ...assignedCampuses];
+  return normalizeCampusList(merged);
+}
+
+export function hasCampusAccess(session: AdminSession, campus: string): boolean {
+  if (session.isSuper || session.isGlobal) {
+    return true;
+  }
+
+  const target = normalizeCampusName(campus);
+  return session.campuses.includes(target);
+}
+
+export function canAccessAllCampuses(session: AdminSession): boolean {
+  return session.isSuper || session.isGlobal;
 }
 
 export async function createAdminSessionToken(admin: Omit<AdminSession, 'exp'>): Promise<string> {
@@ -64,9 +141,24 @@ export async function verifyAdminSessionToken(token: string | undefined): Promis
   const expectedSignature = await signValue(payloadBase64);
   if (!safeEqual(signature, expectedSignature)) return null;
   try {
-    const payload = JSON.parse(fromBase64Url(payloadBase64)) as AdminSession;
+    const payload = JSON.parse(fromBase64Url(payloadBase64)) as Partial<AdminSession>;
     if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
+
+    const baseCampus = typeof payload.campus === 'string' ? payload.campus : '';
+    const normalizedCampuses = Array.isArray(payload.campuses)
+      ? normalizeCampusList(payload.campuses)
+      : normalizeCampusList(baseCampus ? [baseCampus] : []);
+
+    return {
+      id: Number(payload.id),
+      username: String(payload.username ?? ''),
+      name: String(payload.name ?? ''),
+      campus: baseCampus,
+      campuses: normalizedCampuses,
+      isSuper: Boolean(payload.isSuper),
+      isGlobal: Boolean(payload.isGlobal),
+      exp: payload.exp,
+    };
   } catch {
     return null;
   }

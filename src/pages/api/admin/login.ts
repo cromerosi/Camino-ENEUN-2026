@@ -1,6 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSql } from '../../../lib/db';
-import { createAdminSessionToken, getAdminSessionCookieName } from '../../../lib/admin-auth';
+import {
+  createAdminSessionToken,
+  getAdminSessionCookieName,
+  resolveAdminCampuses,
+} from '../../../lib/admin-auth';
 
 function buildCookie(name: string, value: string, maxAgeSeconds: number): string {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
@@ -24,7 +28,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Use md5 or direct comparison based on how passwords were historically populated. Usually plaintext or postgres md5 depending on setup.
     // For this simple implementation we'll match it directly.
     const admins = await sql`
-      SELECT id, username, name, password, campus
+      SELECT id, username, name, password, campus, is_super, is_global, assigned_campuses
       FROM admins
       WHERE username = ${username}
     `;
@@ -40,11 +44,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
        return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
+    const isSuper = Boolean(admin.is_super);
+    const isGlobal = Boolean(admin.is_global);
+    const normalizedCampuses = resolveAdminCampuses(admin.campus, admin.assigned_campuses);
+    const campusLabel = isSuper || isGlobal
+      ? 'Global'
+      : normalizedCampuses.length > 1
+        ? 'Multisede'
+        : admin.campus || 'Sin sede';
+
     const token = await createAdminSessionToken({
       id: admin.id,
       username: admin.username,
       name: admin.name,
-      campus: admin.campus
+      campus: campusLabel,
+      campuses: normalizedCampuses,
+      isSuper,
+      isGlobal,
     });
 
     res.setHeader('Set-Cookie', buildCookie(getAdminSessionCookieName(), token, 60 * 60 * 8));
