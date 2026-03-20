@@ -30,6 +30,14 @@ export default function LandingPage({
   return (
     <Layout>
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-16 lg:px-12">
+        <div className="absolute top-6 right-6 z-50">
+          <a
+            href="/admin/login"
+            className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-emerald-300 transition hover:bg-emerald-500/20"
+          >
+            Administrador Sede
+          </a>
+        </div>
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-24 left-12 h-72 w-72 rounded-full bg-emerald-500/20 blur-[130px]"></div>
           <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-fuchsia-500/20 blur-[170px]"></div>
