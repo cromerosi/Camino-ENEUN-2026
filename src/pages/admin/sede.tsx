@@ -171,15 +171,27 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
 
   const filteredStudents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return students;
+    const source = !term
+      ? students
+      : students.filter((student) => {
+          const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
+          const doc = (student.document_number ?? '').toLowerCase();
+          const email = (student.email ?? '').toLowerCase();
+          return fullName.includes(term) || doc.includes(term) || email.includes(term);
+        });
 
-    return students.filter((student) => {
-      const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
-      const doc = (student.document_number ?? '').toLowerCase();
-      const email = (student.email ?? '').toLowerCase();
-      return fullName.includes(term) || doc.includes(term) || email.includes(term);
+    return [...source].sort((a, b) => {
+      const aName = `${a.last_name} ${a.first_name}`.trim();
+      const bName = `${b.last_name} ${b.first_name}`.trim();
+      return aName.localeCompare(bName, 'es', { sensitivity: 'base' });
     });
   }, [students, searchTerm]);
+
+  const sortedValidations = useMemo(() => {
+    return [...validations].sort((a, b) =>
+      a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
+    );
+  }, [validations]);
 
   const handleSearch = () => {
     setSearchTerm(searchInput);
@@ -217,7 +229,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     }
   };
 
-  const columnCount = Math.max(6, validations.length + 4);
+  const columnCount = Math.max(6, sortedValidations.length + 4);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
@@ -316,7 +328,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
               <thead className="sticky top-0 z-10 bg-slate-900/95 text-violet-100 shadow-md backdrop-blur">
                 <tr>
                   <th className="w-1/4 border-b border-white/15 px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em]">Lista de estudiantes</th>
-                  {validations.map((val) => (
+                  {sortedValidations.map((val) => (
                     <th key={val.id} className="border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.14em]">
                       <div className="mx-auto flex max-w-[180px] items-center justify-center gap-2" title={val.name}>
                         <span className="truncate text-white">{val.name}</span>
@@ -331,7 +343,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                       </div>
                     </th>
                   ))}
-                  {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
+                  {Array.from({ length: Math.max(0, 3 - sortedValidations.length) }).map((_, i) => (
                      <th key={`empty-${i}`} className="border-b border-white/15 px-4 py-4 text-center text-transparent">V</th>
                   ))}
                   <th className="w-28 border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">% avance</th>
@@ -359,7 +371,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                           <p className="mt-1 normal-case tracking-normal text-xs text-slate-400">{student.document_number}</p>
                         </td>
                         
-                        {validations.map((val) => {
+                        {sortedValidations.map((val) => {
                           const studentVal = student.validations.find(v => v.validation_id === val.id);
                           const isChecked = studentVal ? studentVal.is_completed : false;
                           
@@ -382,7 +394,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                           );
                         })}
 
-                        {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
+                        {Array.from({ length: Math.max(0, 3 - sortedValidations.length) }).map((_, i) => (
                            <td key={`empty-cell-${i}`} className="border-b border-white/10 px-4 py-4 text-center"></td>
                         ))}
 
