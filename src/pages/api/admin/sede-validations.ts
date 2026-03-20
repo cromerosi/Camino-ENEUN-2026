@@ -57,6 +57,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  res.setHeader('Allow', 'GET, POST');
+  if (req.method === 'DELETE') {
+    const rawId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
+    const validationId = Number(rawId);
+
+    if (!Number.isInteger(validationId) || validationId <= 0) {
+      return res.status(400).json({ error: 'ID de validación inválido' });
+    }
+
+    try {
+      const existing = await sql`
+        SELECT id
+        FROM sede_validations
+        WHERE id = ${validationId}
+          AND campus = ${session.campus}
+        LIMIT 1
+      `;
+
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Validación no encontrada para esta sede' });
+      }
+
+      await sql`
+        DELETE FROM student_sede_validations
+        WHERE validation_id = ${validationId}
+      `;
+
+      await sql`
+        DELETE FROM sede_validations
+        WHERE id = ${validationId}
+          AND campus = ${session.campus}
+      `;
+
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error('Error deleting sede_validation:', error);
+      return res.status(500).json({ error: 'Error interno al eliminar la validación.' });
+    }
+  }
+
+  res.setHeader('Allow', 'GET, POST, DELETE');
   return res.status(405).json({ error: 'Method Not Allowed' });
 }

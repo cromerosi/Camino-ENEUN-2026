@@ -55,6 +55,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [newValName, setNewValName] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingValidationId, setDeletingValidationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -189,6 +190,33 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     router.push(`/?previewEmail=${encodeURIComponent(email)}`);
   };
 
+  const handleDeleteValidation = async (validationId: number, validationName: string) => {
+    const accepted = window.confirm(
+      `¿Eliminar la validación "${validationName}"? Esta acción también borrará su estado en todos los estudiantes.`,
+    );
+    if (!accepted) return;
+
+    setDeletingValidationId(validationId);
+    try {
+      const res = await fetch(`/api/admin/sede-validations?id=${validationId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'No se pudo eliminar la validación' }));
+        alert(err.error || 'No se pudo eliminar la validación');
+        return;
+      }
+
+      await fetchData();
+    } catch (error) {
+      console.error(error);
+      alert('Error de red al eliminar la validación.');
+    } finally {
+      setDeletingValidationId(null);
+    }
+  };
+
   const columnCount = Math.max(6, validations.length + 4);
 
   return (
@@ -290,7 +318,17 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                   <th className="w-1/4 border-b border-white/15 px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em]">Lista de estudiantes</th>
                   {validations.map((val) => (
                     <th key={val.id} className="border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.14em]">
-                      <div className="mx-auto max-w-[140px] truncate text-white" title={val.name}>{val.name}</div>
+                      <div className="mx-auto flex max-w-[180px] items-center justify-center gap-2" title={val.name}>
+                        <span className="truncate text-white">{val.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteValidation(val.id, val.name)}
+                          disabled={deletingValidationId === val.id}
+                          className="rounded border border-rose-300/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {deletingValidationId === val.id ? '...' : 'X'}
+                        </button>
+                      </div>
                     </th>
                   ))}
                   {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
@@ -305,7 +343,9 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                 {filteredStudents.length === 0 ? (
                   <tr>
                     <td colSpan={columnCount} className="px-6 py-12 text-center text-sm font-medium text-slate-300">
-                      No se encontraron estudiantes con ese criterio o las tablas no han sido creadas.
+                      {students.length === 0
+                        ? 'No hay estudiantes confirmados en esta sede aún o las tablas no han sido creadas.'
+                        : 'No se encontraron estudiantes con ese criterio de búsqueda.'}
                     </td>
                   </tr>
                 ) : (
