@@ -1,6 +1,7 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
+import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import {
   getJourneyStepsByEmail,
@@ -52,6 +53,8 @@ interface DashboardPageProps {
   journeySteps: EneunJourneyStepState[];
   progressPercent: number;
   campingCopy: string;
+  isAdminPreview: boolean;
+  previewEmail: string | null;
 }
 
 export default function DashboardPage({
@@ -60,6 +63,8 @@ export default function DashboardPage({
   journeySteps,
   progressPercent,
   campingCopy,
+  isAdminPreview,
+  previewEmail,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -82,6 +87,11 @@ export default function DashboardPage({
             <p className="mx-auto mt-4 max-w-2xl text-base text-slate-300">
               En esta página podrás visualizar tu progreso y estado como participante en el evento ENEUN 2026. Recuerda que si no cumples todos los pasos requeridos, no podrás asistir al evento. ¡Sigue avanzando para asegurar tu participación en el ENEUN 2026 · Manizales!
             </p>
+            {isAdminPreview && (
+              <p className="mx-auto mt-4 inline-flex max-w-max items-center rounded-full border border-violet-300/30 bg-violet-500/15 px-4 py-2 text-xs uppercase tracking-[0.2em] text-violet-100">
+                Vista previa admin · {previewEmail}
+              </p>
+            )}
           </header>
           <section className="grid gap-8 lg:grid-cols-[1.2fr_0.9fr]">
             <article className="flex h-full min-w-0 flex-col rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
@@ -197,8 +207,22 @@ export default function DashboardPage({
 export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async (context) => {
   const sessionToken = context.req.cookies[getSessionCookieName()];
   const authUser = await verifySignedSessionToken(sessionToken);
+  const rawPreviewEmail = context.query.previewEmail;
+  const previewEmail = typeof rawPreviewEmail === 'string' ? rawPreviewEmail.trim() : '';
 
-  if (!authUser) {
+  let targetEmail = authUser?.email ?? '';
+  let isAdminPreview = false;
+
+  if (!targetEmail && previewEmail) {
+    const adminToken = context.req.cookies[getAdminSessionCookieName()];
+    const adminSession = await verifyAdminSessionToken(adminToken);
+    if (adminSession) {
+      targetEmail = previewEmail;
+      isAdminPreview = true;
+    }
+  }
+
+  if (!targetEmail) {
     return {
       redirect: {
         destination: '/landing',
@@ -207,19 +231,21 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
     };
   }
 
-  const participant = await getParticipantByEmail(authUser.email);
-  const journeySteps = await getJourneyStepsByEmail(authUser.email);
+  const participant = await getParticipantByEmail(targetEmail);
+  const journeySteps = await getJourneyStepsByEmail(targetEmail);
   const progressPercent = Math.round(
     (journeySteps.filter((step) => step.status === 'green').length / journeySteps.length) * 100,
   );
 
   return {
     props: {
-      authEmail: authUser.email,
+      authEmail: targetEmail,
       participant,
       journeySteps,
       progressPercent,
       campingCopy: participant.camping ? 'Acampa' : 'No acampa',
+      isAdminPreview,
+      previewEmail: isAdminPreview ? targetEmail : null,
     },
   };
 };

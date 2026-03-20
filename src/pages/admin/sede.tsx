@@ -1,5 +1,5 @@
 import { GetServerSideProps } from 'next';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import { verifyAdminSessionToken, getAdminSessionCookieName } from '../../lib/admin-auth';
@@ -23,6 +23,7 @@ interface Student {
   registration_id: number;
   first_name: string;
   last_name: string;
+  email: string;
   document_number: string;
   validations: StudentValidation[];
 }
@@ -52,6 +53,8 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [validations, setValidations] = useState<Validation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newValName, setNewValName] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -156,7 +159,37 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     return validations.every(v => completedIds.has(v.id));
   };
 
-  const columnCount = Math.max(4, validations.length + 2);
+  const getStudentProgressPercent = (student: Student) => {
+    if (validations.length === 0) return 0;
+    const completedIds = new Set(
+      student.validations.filter(v => v.is_completed).map(v => v.validation_id)
+    );
+    const completedCount = validations.filter(v => completedIds.has(v.id)).length;
+    return Math.round((completedCount / validations.length) * 100);
+  };
+
+  const filteredStudents = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) return students;
+
+    return students.filter((student) => {
+      const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
+      const doc = (student.document_number ?? '').toLowerCase();
+      const email = (student.email ?? '').toLowerCase();
+      return fullName.includes(term) || doc.includes(term) || email.includes(term);
+    });
+  }, [students, searchTerm]);
+
+  const handleSearch = () => {
+    setSearchTerm(searchInput);
+  };
+
+  const handleOpenParticipantPanel = (email: string) => {
+    if (!email) return;
+    router.push(`/?previewEmail=${encodeURIComponent(email)}`);
+  };
+
+  const columnCount = Math.max(6, validations.length + 4);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
@@ -219,6 +252,29 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
           {validations.length >= 7 && (
             <p className="mt-3 text-xs text-rose-300">Límite máximo de validaciones (7) alcanzado.</p>
           )}
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <input
+              type="text"
+              placeholder="Buscar por nombre, documento o correo..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch();
+                }
+              }}
+              className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400"
+            />
+            <button
+              onClick={handleSearch}
+              className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/15"
+            >
+              Buscar
+            </button>
+            <p className="text-xs text-slate-400 sm:ml-auto">
+              Mostrando {filteredStudents.length} de {students.length}
+            </p>
+          </div>
         </section>
 
         {loading ? (
@@ -228,7 +284,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
         ) : (
           <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl">
             <div className="w-full overflow-x-auto overflow-y-auto max-h-[68vh]">
-            <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
               <thead className="sticky top-0 z-10 bg-slate-900/95 text-violet-100 shadow-md backdrop-blur">
                 <tr>
                   <th className="w-1/4 border-b border-white/15 px-6 py-4 text-xs font-semibold uppercase tracking-[0.16em]">Lista de estudiantes</th>
@@ -240,23 +296,27 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                   {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
                      <th key={`empty-${i}`} className="border-b border-white/15 px-4 py-4 text-center text-transparent">V</th>
                   ))}
+                  <th className="w-28 border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">% avance</th>
                   <th className="w-36 border-b border-white/15 px-6 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">Cumple</th>
+                  <th className="w-40 border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">Panel</th>
                 </tr>
               </thead>
               <tbody className="bg-slate-950/45">
-                {students.length === 0 ? (
+                {filteredStudents.length === 0 ? (
                   <tr>
                     <td colSpan={columnCount} className="px-6 py-12 text-center text-sm font-medium text-slate-300">
-                      No hay estudiantes confirmados en esta sede aún o las tablas no han sido creadas.
+                      No se encontraron estudiantes con ese criterio o las tablas no han sido creadas.
                     </td>
                   </tr>
                 ) : (
-                  students.map((student, idx) => {
+                  filteredStudents.map((student, idx) => {
                     const isCumple = getStudentStatus(student);
+                    const progressPercent = getStudentProgressPercent(student);
                     return (
                       <tr key={student.registration_id} className={`${idx % 2 === 0 ? 'bg-white/0' : 'bg-white/5'} transition-colors hover:bg-violet-500/10`}>
                         <td className="border-b border-white/10 px-6 py-5 font-semibold uppercase tracking-[0.08em] text-white">
                           {student.first_name} {student.last_name}
+                          <p className="mt-1 normal-case tracking-normal text-xs text-slate-400">{student.document_number}</p>
                         </td>
                         
                         {validations.map((val) => {
@@ -285,6 +345,12 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                         {Array.from({ length: Math.max(0, 3 - validations.length) }).map((_, i) => (
                            <td key={`empty-cell-${i}`} className="border-b border-white/10 px-4 py-4 text-center"></td>
                         ))}
+
+                        <td className="border-b border-white/10 px-4 py-4 text-center">
+                          <span className="inline-flex items-center rounded-full border border-violet-300/40 bg-violet-400/15 px-3 py-1 text-xs font-semibold text-violet-100">
+                            {progressPercent}%
+                          </span>
+                        </td>
                         
                         <td className="border-b border-white/10 px-6 py-4 text-center">
                           {validations.length > 0 && isCumple ? (
@@ -292,6 +358,17 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                           ) : (
                             <div className="mx-auto h-6 w-14 rounded-md border-2 border-slate-500 bg-slate-900"></div>
                           )}
+                        </td>
+
+                        <td className="border-b border-white/10 px-4 py-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenParticipantPanel(student.email)}
+                            disabled={!student.email}
+                            className="rounded-full border border-white/20 px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200 transition hover:border-violet-300/60 hover:text-violet-100 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Ver index
+                          </button>
                         </td>
                       </tr>
                     );

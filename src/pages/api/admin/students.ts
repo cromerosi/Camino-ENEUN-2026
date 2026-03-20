@@ -19,6 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           r.id as registration_id, 
           r.first_name, 
           r.last_name, 
+          r.email,
           r.document_number,
           COALESCE(
             (
