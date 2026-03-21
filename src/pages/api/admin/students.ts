@@ -72,7 +72,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         JOIN sede_validations sv
           ON sv.id = ${validation_id}
         WHERE r.id = ${registration_id}
-          AND c.campus = sv.campus
+          AND (
+            c.campus = sv.campus 
+            OR translate(LOWER(c.campus), 'áéíóú', 'aeiou') = translate(LOWER(sv.campus), 'áéíóú', 'aeiou')
+          )
         LIMIT 1
       `;
 

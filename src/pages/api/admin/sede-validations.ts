@@ -112,7 +112,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       await sql`
         DELETE FROM sede_validations
         WHERE id = ${validationId}
-          AND campus = ${session.campus}
+          AND (
+            campus = ${session.campus}
+            OR translate(LOWER(campus), 'áéíóú', 'aeiou') = translate(LOWER(${session.campus ?? ''}), 'áéíóú', 'aeiou')
+          )
       `;
 
       return res.status(200).json({ success: true });
