@@ -57,6 +57,13 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingValidationId, setDeletingValidationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Bulk validation state
+  const [scrapText, setScrapText] = useState('');
+  const [scrapValidationId, setScrapValidationId] = useState<number | ''>('');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ success: number; notFound: number } | null>(null);
+
   const router = useRouter();
 
   const handleLogout = async () => {
@@ -114,7 +121,78 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     }
   };
 
+  const handleBulkValidate = async () => {
+    if (!scrapText.trim() || !scrapValidationId) {
+      alert('Ingresa texto y selecciona una validación');
+      return;
+    }
+
+    setBulkLoading(true);
+    setBulkResult(null);
+
+    const rawLines = scrapText
+      .split(/\r?\n/)
+      .map((l) => l.trim().toLowerCase().replace(/[^a-z0-9@._\-áéíóúüñ ]+$/g, '').trim())
+      .filter(Boolean);
+    const matchedIds = new Set<number>();
+
+    rawLines.forEach((line) => {
+      const matched = students.find((s) => {
+        const doc = (s.document_number ?? '').toLowerCase();
+        const email = (s.email ?? '').toLowerCase();
+        const fName = s.first_name.toLowerCase();
+        const lName = s.last_name.toLowerCase();
+        const fullName = `${fName} ${lName}`;
+        return (
+          (doc && line.includes(doc)) ||
+          (email && line.includes(email)) ||
+          (fullName && line.includes(fullName)) ||
+          (line.includes(fName) && line.includes(lName))
+        );
+      });
+      if (matched) matchedIds.add(matched.registration_id);
+    });
+
+    const registration_ids = Array.from(matchedIds);
+    const notFoundCount = Math.max(0, rawLines.length - registration_ids.length);
+
+    if (registration_ids.length === 0) {
+      alert('No se encontraron coincidencias (por nombre, correo ni documento) en los datos ingresados.');
+      setBulkLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/admin/bulk-validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          registration_ids,
+          validation_id: Number(scrapValidationId),
+          is_completed: true,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setScrapText('');
+        setBulkResult({ success: data.count, notFound: notFoundCount });
+        fetchData();
+        setTimeout(() => setBulkResult(null), 8000);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Error al validar masivamente');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Error de red al validar masivamente');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleToggleValidation = async (registrationId: number, validationId: number, currentStatus: boolean) => {
+
     // Optimistic UI update
     setStudents(prev => prev.map(s => {
       if (s.registration_id === registrationId) {
@@ -428,6 +506,82 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                 )}
               </tbody>
             </table>
+            </div>
+          </section>
+        )}
+
+        {/* ── Validación Masiva (Scrap) ── */}
+        {!loading && validations.length > 0 && (
+          <section className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
+            <div className="mb-6">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Herramienta</p>
+              <h2 className="mt-2 flex items-center gap-2 text-xl font-semibold text-white">
+                <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                </svg>
+                Validación Masiva
+              </h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Copia y pega desde Excel (nombre completo, correo institucional o número de documento). Selecciona la validación y haz clic en &quot;Validar&quot;.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div className="md:col-span-2">
+                <textarea
+                  className="h-48 w-full resize-none rounded-2xl border border-slate-700 bg-slate-900/70 p-4 font-mono text-sm text-white placeholder-slate-600 outline-none transition focus:border-violet-400 disabled:opacity-50"
+                  placeholder={"Ejemplo:\n12345678\njuan.perez@unal.edu.co\nJuan Pérez..."}
+                  value={scrapText}
+                  onChange={(e) => setScrapText(e.target.value)}
+                  disabled={bulkLoading}
+                />
+              </div>
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                    Tipo de validación
+                  </label>
+                  <select
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition focus:border-violet-400 disabled:opacity-50"
+                    value={scrapValidationId}
+                    onChange={(e) => setScrapValidationId(Number(e.target.value))}
+                    disabled={bulkLoading}
+                  >
+                    <option value="">-- Seleccionar --</option>
+                    {validations.map((v) => (
+                      <option key={v.id} value={v.id}>{v.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={handleBulkValidate}
+                  disabled={bulkLoading || !scrapText.trim() || !scrapValidationId}
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {bulkLoading ? (
+                    <>
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-100 border-t-transparent" />
+                      Procesando...
+                    </>
+                  ) : (
+                    'Validar estudiantes'
+                  )}
+                </button>
+
+                {bulkResult && (
+                  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4">
+                    <p className="text-sm font-semibold text-emerald-300">
+                      ✓ {bulkResult.success} {bulkResult.success === 1 ? 'estudiante validado' : 'estudiantes validados'}
+                    </p>
+                    {bulkResult.notFound > 0 && (
+                      <p className="mt-1 text-xs leading-relaxed text-rose-300">
+                        ⚠ ~{bulkResult.notFound} líneas no coincidieron con registros de esta sede.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </section>
         )}
