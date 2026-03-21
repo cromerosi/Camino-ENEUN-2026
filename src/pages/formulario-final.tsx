@@ -299,7 +299,7 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
     if (registration?.has_attendee_submission) {
       return {
         redirect: {
-          destination: '/',
+          destination: '/?finalFormStatus=already-submitted',
           permanent: false,
         },
       };

@@ -56,6 +56,7 @@ interface DashboardPageProps {
   isAdminPreview: boolean;
   previewEmail: string | null;
   finalFormUrl: string | null;
+  showFinalFormSubmittedAlert: boolean;
 }
 
 export default function DashboardPage({
@@ -67,6 +68,7 @@ export default function DashboardPage({
   isAdminPreview,
   previewEmail,
   finalFormUrl,
+  showFinalFormSubmittedAlert,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -93,6 +95,12 @@ export default function DashboardPage({
               <p className="mx-auto mt-4 inline-flex max-w-max items-center rounded-full border border-violet-300/30 bg-violet-500/15 px-4 py-2 text-xs uppercase tracking-[0.2em] text-violet-100">
                 Vista previa admin · {previewEmail}
               </p>
+            )}
+
+            {showFinalFormSubmittedAlert && (
+              <div className="mx-auto mt-6 max-w-3xl rounded-2xl border border-fuchsia-300/35 bg-fuchsia-500/15 px-5 py-3 text-sm text-fuchsia-100">
+                El formulario final ya fue llenado. No es necesario volver a enviarlo.
+              </div>
             )}
           </header>
           <section className="grid gap-8 lg:grid-cols-[1.2fr_0.9fr]">
@@ -221,6 +229,8 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
   const authUser = await verifySignedSessionToken(sessionToken);
   const rawPreviewEmail = context.query.previewEmail;
   const previewEmail = typeof rawPreviewEmail === 'string' ? rawPreviewEmail.trim() : '';
+  const rawFinalFormStatus = context.query.finalFormStatus;
+  const finalFormStatus = typeof rawFinalFormStatus === 'string' ? rawFinalFormStatus.trim() : '';
 
   let targetEmail = authUser?.email ?? '';
   let isAdminPreview = false;
@@ -277,6 +287,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       isAdminPreview,
       previewEmail: isAdminPreview ? targetEmail : null,
       finalFormUrl,
+      showFinalFormSubmittedAlert: finalFormStatus === 'already-submitted',
     },
   };
 };
