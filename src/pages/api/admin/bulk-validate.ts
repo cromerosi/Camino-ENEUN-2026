@@ -52,7 +52,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       FROM registrations r
       JOIN confirmation_submissions c ON c.registration_id = r.id
       WHERE r.id = ANY(${registration_ids}::int[])
-        AND c.campus = ${targetCampus}
+        AND (
+          c.campus = ${targetCampus} 
+          OR translate(LOWER(c.campus), 'áéíóú', 'aeiou') = translate(LOWER(${targetCampus}), 'áéíóú', 'aeiou')
+        )
     `;
 
     const allowedIds = (studentRows as unknown as { id: number }[]).map((r) => r.id);

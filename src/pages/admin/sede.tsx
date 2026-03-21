@@ -57,6 +57,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingValidationId, setDeletingValidationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
 
   // Bulk validation state
   const [scrapText, setScrapText] = useState('');
@@ -264,7 +265,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
 
   const filteredStudents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    const source = !term
+    let source = !term
       ? students
       : students.filter((student) => {
           const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
@@ -273,12 +274,19 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
           return fullName.includes(term) || doc.includes(term) || email.includes(term);
         });
 
+    if (statusFilter !== 'all') {
+      source = source.filter(s => {
+        const isCompleted = getStudentStatus(s);
+        return statusFilter === 'completed' ? isCompleted : !isCompleted;
+      });
+    }
+    
     return [...source].sort((a, b) => {
       const aName = `${a.last_name} ${a.first_name}`.trim();
       const bName = `${b.last_name} ${b.first_name}`.trim();
       return aName.localeCompare(bName, 'es', { sensitivity: 'base' });
     });
-  }, [students, searchTerm]);
+  }, [students, searchTerm, statusFilter, validations]);
 
   const sortedValidations = useMemo(() => {
     return [...validations].sort((a, b) =>
@@ -399,12 +407,33 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
               className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400"
             />
             <button
-              onClick={handleSearch}
-              className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/15"
-            >
-              Buscar
-            </button>
-            <p className="text-xs text-slate-400 sm:ml-auto">
+               onClick={handleSearch}
+               className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/15"
+             >
+               Buscar
+             </button>
+
+            <div className="flex rounded-2xl border border-slate-700 bg-slate-900/40 p-1 shadow-inner backdrop-blur-sm">
+               {[
+                 { id: 'all', label: 'Todos' },
+                 { id: 'completed', label: 'Cumple' },
+                 { id: 'pending', label: 'No Cumple' }
+               ].map((opt) => (
+                 <button
+                   key={opt.id}
+                   onClick={() => setStatusFilter(opt.id as any)}
+                   className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-xl transition duration-300 ${
+                     statusFilter === opt.id
+                       ? 'bg-violet-500/20 text-violet-200 border border-violet-400/30'
+                       : 'text-slate-500 hover:text-slate-300'
+                   }`}
+                 >
+                   {opt.label}
+                 </button>
+               ))}
+             </div>
+
+             <p className="text-xs text-slate-400 sm:ml-auto">
               Mostrando {filteredStudents.length} de {students.length}
             </p>
           </div>
