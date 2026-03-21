@@ -12,6 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.94.5",
     "next": "^15.2.0",
     "postgres": "^3.4.8",
     "react": "^19.0.0",

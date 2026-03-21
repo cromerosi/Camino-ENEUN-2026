@@ -1,4 +1,5 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import { useQuery } from '@tanstack/react-query';
 import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
@@ -64,14 +65,13 @@ interface DashboardPageProps {
 export default function DashboardPage({
   authEmail,
   participant,
-  journeySteps,
-  progressPercent,
+  journeySteps: initialJourneySteps,
+  progressPercent: initialProgressPercent,
   campingCopy,
   isAdminPreview,
   previewEmail,
   finalFormUrl,
   showFinalFormSubmittedAlert,
-  showPreconfirmationRequiredAlert,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -170,17 +170,17 @@ export default function DashboardPage({
                   <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Camino ENEUN</p>
                   <h2 className="mt-3 text-2xl font-semibold text-white">Línea de progreso</h2>
                 </div>
-                <span className="text-4xl font-semibold text-emerald-300">{progressPercent}%</span>
+                <span className="text-4xl font-semibold text-emerald-300">{currentProgressPercent}%</span>
               </div>
               <div className="mt-6 h-2 rounded-full bg-white/10">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-fuchsia-400 to-rose-400"
-                  style={{ width: `${progressPercent}%` }}
+                  style={{ width: `${currentProgressPercent}%` }}
                 ></div>
               </div>
               <div className="relative mt-10">
                 <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
-                  {journeySteps.map((step, index) => {
+                  {currentJourneySteps.map((step: EneunJourneyStepState, index: number) => {
                     const style = getStatusStyle(step.status);
                     return (
                       <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
