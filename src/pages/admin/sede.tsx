@@ -62,7 +62,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [scrapText, setScrapText] = useState('');
   const [scrapValidationId, setScrapValidationId] = useState<number | ''>('');
   const [bulkLoading, setBulkLoading] = useState(false);
-  const [bulkResult, setBulkResult] = useState<{ success: number; notFound: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ success: number; unmatched: string[] } | null>(null);
 
   const router = useRouter();
 
@@ -130,11 +130,20 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
     setBulkLoading(true);
     setBulkResult(null);
 
+    // Clean each line: extract email if present, otherwise strip non-printable/junk chars
     const rawLines = scrapText
       .split(/\r?\n/)
-      .map((l) => l.trim().toLowerCase().replace(/[^a-z0-9@._\-áéíóúüñ ]+$/g, '').trim())
+      .map((l) => {
+        const trimmed = l.trim().toLowerCase();
+        // Try to extract a clean email from the line
+        const emailMatch = trimmed.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/);
+        if (emailMatch) return emailMatch[0];
+        // Otherwise strip non-printable characters and keep alphanumeric + spaces
+        return trimmed.replace(/[^\w\s@.\-áéíóúüñ]/g, '').trim();
+      })
       .filter(Boolean);
     const matchedIds = new Set<number>();
+    const unmatchedLines: string[] = [];
 
     rawLines.forEach((line) => {
       const matched = students.find((s) => {
@@ -150,11 +159,14 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
           (line.includes(fName) && line.includes(lName))
         );
       });
-      if (matched) matchedIds.add(matched.registration_id);
+      if (matched) {
+        matchedIds.add(matched.registration_id);
+      } else {
+        unmatchedLines.push(line);
+      }
     });
 
     const registration_ids = Array.from(matchedIds);
-    const notFoundCount = Math.max(0, rawLines.length - registration_ids.length);
 
     if (registration_ids.length === 0) {
       alert('No se encontraron coincidencias (por nombre, correo ni documento) en los datos ingresados.');
@@ -176,9 +188,9 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
       if (res.ok) {
         const data = await res.json();
         setScrapText('');
-        setBulkResult({ success: data.count, notFound: notFoundCount });
+        setBulkResult({ success: data.count, unmatched: unmatchedLines });
         fetchData();
-        setTimeout(() => setBulkResult(null), 8000);
+        setTimeout(() => setBulkResult(null), 15000);
       } else {
         const err = await res.json();
         alert(err.error || 'Error al validar masivamente');
@@ -222,6 +234,9 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
         // Revert on failure by refetching
         fetchData();
         alert('Error al guardar el estado en la base de datos (quizás la tabla no existe aún). Se descartaron los cambios manuales.');
+      } else {
+        // Confirm state is in sync with DB
+        fetchData();
       }
     } catch (error) {
        console.error(error);
@@ -574,10 +589,24 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
                     <p className="text-sm font-semibold text-emerald-300">
                       ✓ {bulkResult.success} {bulkResult.success === 1 ? 'estudiante validado' : 'estudiantes validados'}
                     </p>
-                    {bulkResult.notFound > 0 && (
-                      <p className="mt-1 text-xs leading-relaxed text-rose-300">
-                        ⚠ ~{bulkResult.notFound} líneas no coincidieron con registros de esta sede.
-                      </p>
+                    {bulkResult.unmatched.length > 0 && (
+                      <div className="mt-2 text-xs leading-relaxed text-rose-300">
+                        <p className="font-medium underline decoration-rose-400/50 underline-offset-2">
+                          ⚠ {bulkResult.unmatched.length} líneas no coincidieron:
+                        </p>
+                        <ul className="mt-1 max-h-32 overflow-y-auto space-y-0.5 pr-2 custom-scrollbar">
+                          {bulkResult.unmatched.slice(0, 50).map((line, idx) => (
+                            <li key={idx} className="font-mono bg-rose-900/20 px-1 rounded truncate">
+                              • {line}
+                            </li>
+                          ))}
+                          {bulkResult.unmatched.length > 50 && (
+                            <li className="italic opacity-70">
+                              ... y {bulkResult.unmatched.length - 50} más.
+                            </li>
+                          )}
+                        </ul>
+                      </div>
                     )}
                   </div>
                 )}
