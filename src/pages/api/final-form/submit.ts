@@ -286,10 +286,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const registrations = await sql`
-      SELECT id, uuid, email, first_name, last_name
-      FROM registrations
-      WHERE lower(trim(email)) = lower(trim(${authUser.email}))
-      ORDER BY registered_at DESC
+      SELECT
+        r.id,
+        r.uuid,
+        r.email,
+        r.first_name,
+        r.last_name,
+        (
+          r.confirm_submitted_at IS NOT NULL OR EXISTS (
+            SELECT 1
+            FROM confirmation_submissions cs
+            WHERE cs.registration_id = r.id
+          )
+        ) AS has_confirmation_submission
+      FROM registrations r
+      WHERE lower(trim(r.email)) = lower(trim(${authUser.email}))
+      ORDER BY r.registered_at DESC
       LIMIT 1
     ` as Array<{
       id: number | null;
@@ -297,12 +309,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       email: string | null;
       first_name: string | null;
       last_name: string | null;
+      has_confirmation_submission: boolean;
     }>;
 
     const registration = registrations[0];
     const registrationId = registration?.id;
     if (!registrationId) {
       return res.status(404).json({ error: 'No encontramos un registro para este correo' });
+    }
+
+    if (!registration.has_confirmation_submission) {
+      return res.status(403).json({
+        error: 'Debes realizar la preconfirmación antes de enviar el formulario final.',
+      });
     }
 
     await sql`

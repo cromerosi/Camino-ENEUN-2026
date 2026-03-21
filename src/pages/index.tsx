@@ -58,6 +58,7 @@ interface DashboardPageProps {
   previewEmail: string | null;
   finalFormUrl: string | null;
   showFinalFormSubmittedAlert: boolean;
+  showPreconfirmationRequiredAlert: boolean;
 }
 
 export default function DashboardPage({
@@ -70,6 +71,7 @@ export default function DashboardPage({
   previewEmail,
   finalFormUrl,
   showFinalFormSubmittedAlert,
+  showPreconfirmationRequiredAlert,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -101,6 +103,12 @@ export default function DashboardPage({
             {showFinalFormSubmittedAlert && (
               <div className="mx-auto mt-6 max-w-3xl rounded-2xl border border-fuchsia-300/35 bg-fuchsia-500/15 px-5 py-3 text-sm text-fuchsia-100">
                 El formulario final ya fue llenado. No es necesario volver a enviarlo.
+              </div>
+            )}
+
+            {showPreconfirmationRequiredAlert && (
+              <div className="mx-auto mt-6 max-w-3xl rounded-2xl border border-rose-300/35 bg-rose-500/15 px-5 py-3 text-sm text-rose-100">
+                Debes completar primero la preconfirmación para poder acceder al formulario final.
               </div>
             )}
           </header>
@@ -322,6 +330,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       previewEmail: isAdminPreview ? targetEmail : null,
       finalFormUrl,
       showFinalFormSubmittedAlert: finalFormStatus === 'already-submitted',
+      showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
     },
   };
 };

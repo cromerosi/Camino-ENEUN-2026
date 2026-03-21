@@ -270,6 +270,13 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
         r.allergy_specify,
         r.confirm_answers,
         r.final_submitted_at,
+        (
+          r.confirm_submitted_at IS NOT NULL OR EXISTS (
+            SELECT 1
+            FROM confirmation_submissions cs_confirm
+            WHERE cs_confirm.registration_id = r.id
+          )
+        ) AS has_confirmation_submission,
         EXISTS (
           SELECT 1
           FROM attendees a
@@ -292,10 +299,20 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
       allergy_specify: string | null;
       confirm_answers: unknown;
       final_submitted_at: string | Date | null;
+      has_confirmation_submission: boolean;
       has_attendee_submission: boolean;
     }>;
 
     const registration = rows[0];
+    if (!registration?.has_confirmation_submission) {
+      return {
+        redirect: {
+          destination: '/?finalFormStatus=preconfirmation-required',
+          permanent: false,
+        },
+      };
+    }
+
     if (registration?.has_attendee_submission) {
       return {
         redirect: {
