@@ -50,9 +50,6 @@ export default function LandingPage({
             Inicia sesión con Auth0 para visualizar tu proceso.
             Solo se permiten cuentas institucionales con dominio @unal.edu.co.
           </p>
-          <p className="mx-auto mt-3 max-w-2xl text-xs uppercase tracking-[0.12em] text-slate-400">
-            Durante el login en celular, evita cambiar entre modo escritorio y modo normal de Chrome.
-          </p>
 
           {errorMessage && (
             <div className="mx-auto mt-8 max-w-xl rounded-2xl border border-rose-400/30 bg-rose-500/10 px-5 py-4 text-sm text-rose-200">

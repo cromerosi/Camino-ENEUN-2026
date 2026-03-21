@@ -55,6 +55,7 @@ interface DashboardPageProps {
   campingCopy: string;
   isAdminPreview: boolean;
   previewEmail: string | null;
+  finalFormUrl: string | null;
 }
 
 export default function DashboardPage({
@@ -65,6 +66,7 @@ export default function DashboardPage({
   campingCopy,
   isAdminPreview,
   previewEmail,
+  finalFormUrl,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -193,6 +195,19 @@ export default function DashboardPage({
                   );
                 })}
               </div>
+              <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-5">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Paso final</p>
+                {finalFormUrl ? (
+                  <a
+                    href={finalFormUrl}
+                    className="mt-4 inline-flex items-center rounded-full bg-gradient-to-r from-emerald-400 via-fuchsia-400 to-rose-400 px-5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-950 transition hover:brightness-110"
+                  >
+                    Ir al formulario final
+                  </a>
+                ) : (
+                  <span className="mt-4 block text-xs text-slate-400">Sin enlace disponible.</span>
+                )}
+              </div>
             </article>
           </section>
         </div>
@@ -230,6 +245,24 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
 
   const participant = await getParticipantByEmail(targetEmail);
   const journeySteps = await getJourneyStepsByEmail(targetEmail);
+  const finalFormBaseUrl =
+    process.env.FINAL_FORM_URL?.trim() || process.env.NEXT_PUBLIC_FINAL_FORM_URL?.trim() || '';
+  const internalFinalFormUrl = '/formulario-final';
+
+  let finalFormUrl: string | null = null;
+  if (finalFormBaseUrl) {
+    try {
+      const url = new URL(finalFormBaseUrl);
+      url.searchParams.set('email', targetEmail);
+      finalFormUrl = url.toString();
+    } catch {
+      const separator = finalFormBaseUrl.includes('?') ? '&' : '?';
+      finalFormUrl = `${finalFormBaseUrl}${separator}email=${encodeURIComponent(targetEmail)}`;
+    }
+  } else {
+    finalFormUrl = internalFinalFormUrl;
+  }
+
   const progressPercent = Math.round(
     (journeySteps.filter((step) => step.status === 'green').length / journeySteps.length) * 100,
   );
@@ -243,6 +276,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       campingCopy: participant.camping ? 'Acampa' : 'No acampa',
       isAdminPreview,
       previewEmail: isAdminPreview ? targetEmail : null,
+      finalFormUrl,
     },
   };
 };

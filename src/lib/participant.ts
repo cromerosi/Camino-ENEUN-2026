@@ -27,6 +27,7 @@ interface RegistrationRow {
   confirm_answers?: unknown;
   confirm_submitted_at?: string | Date | null;
   final_submitted_at?: string | Date | null;
+  attendee_submitted_at?: string | Date | null;
   confirmation_campus?: string | null;
 }
 
@@ -199,6 +200,7 @@ function buildJourneyStepsFromRegistration(
 
   const preinscriptionDate = toJourneyDate(registration.registered_at);
   const preconfirmationDate = toJourneyDate(registration.confirm_submitted_at);
+  const finalSubmissionDate = toJourneyDate(registration.attendee_submitted_at);
 
   const hasPreconfirmation = Boolean(registration.confirm_submitted_at);
   const { totalValidations, completedValidations } = validationProgress;
@@ -259,8 +261,12 @@ function buildJourneyStepsFromRegistration(
     },
     {
       label: 'Formulario final',
-      status: 'gray',
-      detail: 'Todavía no está habilitado',
+      status: registration.attendee_submitted_at ? 'green' : 'purple',
+      detail: registration.attendee_submitted_at
+        ? finalSubmissionDate
+          ? `Completado el ${finalSubmissionDate}`
+          : 'Completado'
+        : 'Formulario en curso',
     },
   ];
 }
@@ -370,7 +376,20 @@ export async function getJourneyStepsByEmail(email: string): Promise<EneunJourne
       ? await getSedeValidationProgress(registration.id, campus)
       : { totalValidations: 0, completedValidations: 0 };
 
-    return buildJourneyStepsFromRegistration(registration, validationProgress);
+    const attendeeRows = (await sql`
+      SELECT updated_at
+      FROM attendees
+      WHERE attendee_id = ${String(registration.id)}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `) as Array<{ updated_at: string | Date | null }>;
+
+    const registrationWithFinalStep: RegistrationRow = {
+      ...registration,
+      attendee_submitted_at: attendeeRows[0]?.updated_at ?? null,
+    };
+
+    return buildJourneyStepsFromRegistration(registrationWithFinalStep, validationProgress);
   } catch {
     return ENEUN_PROCESS_NODES.map((label) => ({
       label,

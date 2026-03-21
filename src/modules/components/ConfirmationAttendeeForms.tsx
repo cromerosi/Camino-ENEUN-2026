@@ -1,0 +1,566 @@
+import { useEffect, useMemo, useState } from 'react';
+import type {
+  ConfirmationFormData,
+  ConfirmationFormProps,
+  ConfirmationHealthConditionCode,
+} from '../types/confirmation';
+
+import {
+  confirmationBloodTypes,
+  confirmationHealthOptions,
+  confirmationLodgingOptions,
+  confirmationPronounOptions,
+  confirmationRelationshipOptions,
+} from '../constants/confirmationCatalogs';
+
+import {
+  clearUnusedHealthDetailFields,
+  createConfirmationInitialData,
+  normalizeHealthSelection,
+  validateConfirmationForm,
+} from '../utils/confirmationFormUtils';
+
+import { ConfirmationSection } from './ConfirmationSection';
+import { ConfirmationTextInput } from './ConfirmationTextInput';
+import { ConfirmationTextarea } from './ConfirmationTextarea';
+import { ConfirmationSelect } from './ConfirmationSelect';
+import { ConfirmationCheckboxCard } from './ConfirmationCheckboxCard';
+import { ConfirmationFieldError } from './ConfirmationFieldError';
+
+export function ConfirmationAttendeeForm({
+  prefill,
+  initialData,
+  editableId = true,
+  onSubmitData,
+  onCancel,
+}: ConfirmationFormProps) {
+  const [form, setForm] = useState<ConfirmationFormData>(() =>
+    createConfirmationInitialData(prefill, initialData)
+  );
+
+  const [errors, setErrors] = useState<
+    Partial<Record<keyof ConfirmationFormData, string>>
+  >({});
+  const [submitError, setSubmitError] = useState<string>('');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setForm(createConfirmationInitialData(prefill, initialData));
+    setErrors({});
+    setSubmitError('');
+  }, [prefill, initialData]);
+
+  const selectedHealthOptions = useMemo(
+    () =>
+      confirmationHealthOptions.filter((option) =>
+        form.healthConditionCodes.includes(option.code)
+      ),
+    [form.healthConditionCodes]
+  );
+
+  function updateField<K extends keyof ConfirmationFormData>(
+    key: K,
+    value: ConfirmationFormData[K]
+  ) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+    setErrors((prev) => ({ ...prev, [key]: undefined }));
+  }
+
+  function handleToggleHealthCondition(code: ConfirmationHealthConditionCode) {
+    setForm((prev) => {
+      const nextCodes = normalizeHealthSelection(prev.healthConditionCodes, code);
+
+      return clearUnusedHealthDetailFields({
+        ...prev,
+        healthConditionCodes: nextCodes,
+      });
+    });
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitError('');
+
+    const cleanedForm = clearUnusedHealthDetailFields({
+      ...form,
+      id: form.id.trim(),
+      badgeName: form.badgeName.trim(),
+      sede: form.sede.trim(),
+      pronounOther: form.pronounOther.trim(),
+      allergiesDetail: form.allergiesDetail.trim(),
+      asthmaDetail: form.asthmaDetail.trim(),
+      diabetesDetail: form.diabetesDetail.trim(),
+      nonNeurotypicalDetail: form.nonNeurotypicalDetail.trim(),
+      epilepsyDetail: form.epilepsyDetail.trim(),
+      hypertensionDetail: form.hypertensionDetail.trim(),
+      cardiacConditionsDetail: form.cardiacConditionsDetail.trim(),
+      reducedMobilityDetail: form.reducedMobilityDetail.trim(),
+      visualDisabilityDetail: form.visualDisabilityDetail.trim(),
+      hearingDisabilityDetail: form.hearingDisabilityDetail.trim(),
+      permanentMedicationDetail: form.permanentMedicationDetail.trim(),
+      psychosocialDisabilityDetail: form.psychosocialDisabilityDetail.trim(),
+      otherHealthConditionDetail: form.otherHealthConditionDetail.trim(),
+      emergencyContactName: form.emergencyContactName.trim(),
+      emergencyContactRelationship: form.emergencyContactRelationship.trim(),
+      emergencyContactPhone: form.emergencyContactPhone.trim(),
+      lodgingAddress: form.lodgingAddress.trim(),
+      transport: form.transport,
+    });
+
+    const nextErrors = validateConfirmationForm(cleanedForm);
+    setErrors(nextErrors);
+
+    if (Object.keys(nextErrors).length > 0) return;
+
+    try {
+      setIsSubmitting(true);
+      await onSubmitData?.(cleanedForm);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'No se pudo guardar la información. Inténtalo de nuevo.';
+      setSubmitError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <ConfirmationSection
+        title="Identificación"
+        subtitle="Información base y nombre que aparecerá en la escarapela."
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <ConfirmationTextInput
+            label="Cédula"
+            value={form.id}
+            onChange={(value) => updateField('id', value)}
+            required
+            disabled={!editableId}
+            error={errors.id}
+            placeholder="Ej. 1020304050"
+          />
+
+          <ConfirmationTextInput
+            label="Sede"
+            value={form.sede}
+            onChange={(value) => updateField('sede', value)}
+            disabled
+          />
+
+          <ConfirmationTextInput
+            label="UUID"
+            value={prefill?.uuid ?? 'No disponible'}
+            onChange={() => undefined}
+            disabled
+          />
+
+          <ConfirmationTextInput
+            label="Email"
+            value={prefill?.email ?? ''}
+            onChange={() => undefined}
+            disabled
+          />
+        </div>
+
+        <ConfirmationTextInput
+          label="¿Qué nombre quieres que aparezca en tu escarapela?"
+          value={form.badgeName}
+          onChange={(value) => updateField('badgeName', value)}
+          required
+          error={errors.badgeName}
+          placeholder="Lo precargamos con tu nombre legal, pero puedes editarlo"
+        />
+
+        <ConfirmationTextInput
+          label="Nombre legal (no editable)"
+          value={prefill?.legalName ?? ''}
+          onChange={() => undefined}
+          disabled
+        />
+      </ConfirmationSection>
+
+      <ConfirmationSection
+        title="Salud y bienestar"
+        subtitle="Selecciona las condiciones que quieras reportar. Puedes marcar varias."
+      >
+        <div>
+          <label className="mb-2 block text-sm font-semibold text-slate-200">
+            ¿Hay alguna condición de salud que quieras informarnos para tenerla
+            en cuenta durante la actividad?
+            <span className="ml-1 text-amber-300">*</span>
+          </label>
+
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {confirmationHealthOptions.map((option) => (
+              <ConfirmationCheckboxCard
+                key={option.code}
+                checked={form.healthConditionCodes.includes(option.code)}
+                label={option.label}
+                onToggle={() => handleToggleHealthCondition(option.code)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {form.healthConditionCodes.includes('ALLERGIES') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste alergias, indícanos cuáles debemos tener en cuenta"
+            value={form.allergiesDetail}
+            onChange={(value) => updateField('allergiesDetail', value)}
+            required
+            error={errors.allergiesDetail}
+            placeholder="Ej. Penicilina, frutos secos, picaduras, etc."
+          />
+        )}
+
+        {form.healthConditionCodes.includes('ASTHMA') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste asma, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.asthmaDetail}
+            onChange={(value) => updateField('asthmaDetail', value)}
+            required
+            error={errors.asthmaDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('DIABETES') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste diabetes, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.diabetesDetail}
+            onChange={(value) => updateField('diabetesDetail', value)}
+            required
+            error={errors.diabetesDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('NON_NEUROTYPICAL') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste no neurotipico, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.nonNeurotypicalDetail}
+            onChange={(value) => updateField('nonNeurotypicalDetail', value)}
+            required
+            error={errors.nonNeurotypicalDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('EPILEPSY') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste epilepsia o antecedentes convulsivos, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.epilepsyDetail}
+            onChange={(value) => updateField('epilepsyDetail', value)}
+            required
+            error={errors.epilepsyDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('HYPERTENSION') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste hipertensión, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.hypertensionDetail}
+            onChange={(value) => updateField('hypertensionDetail', value)}
+            required
+            error={errors.hypertensionDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('CARDIAC') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste condiciones cardíacas, ¿cuáles deseas reportar?"
+            value={form.cardiacConditionsDetail}
+            onChange={(value) => updateField('cardiacConditionsDetail', value)}
+            required
+            error={errors.cardiacConditionsDetail}
+            placeholder="Describe brevemente la condición o indicaciones relevantes"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('REDUCED_MOBILITY') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste movilidad reducida, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.reducedMobilityDetail}
+            onChange={(value) => updateField('reducedMobilityDetail', value)}
+            required
+            error={errors.reducedMobilityDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('VISUAL_DISABILITY') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste discapacidad visual, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.visualDisabilityDetail}
+            onChange={(value) => updateField('visualDisabilityDetail', value)}
+            required
+            error={errors.visualDisabilityDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('HEARING_DISABILITY') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste discapacidad auditiva, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.hearingDisabilityDetail}
+            onChange={(value) => updateField('hearingDisabilityDetail', value)}
+            required
+            error={errors.hearingDisabilityDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('PERMANENT_MEDICATION') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste medicación permanente, indícanos cuál medicamento tomas y para qué"
+            value={form.permanentMedicationDetail}
+            onChange={(value) =>
+              updateField('permanentMedicationDetail', value)
+            }
+            required
+            error={errors.permanentMedicationDetail}
+            placeholder="Ej. Losartán 50 mg para hipertensión"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('PSYCHOSOCIAL_DISABILITY') && (
+          <ConfirmationTextarea
+            label="Si seleccionaste discapacidad psicosocial, ¿qué ajuste o consideración debemos tener en cuenta?"
+            value={form.psychosocialDisabilityDetail}
+            onChange={(value) => updateField('psychosocialDisabilityDetail', value)}
+            required
+            error={errors.psychosocialDisabilityDetail}
+            placeholder="Describe brevemente la información que quieras compartir"
+          />
+        )}
+
+        {form.healthConditionCodes.includes('OTHER') && (
+          <ConfirmationTextarea
+            label="Indica cuál otra condición deseas reportar"
+            value={form.otherHealthConditionDetail}
+            onChange={(value) =>
+              updateField('otherHealthConditionDetail', value)
+            }
+            required
+            error={errors.otherHealthConditionDetail}
+            placeholder="Escribe aquí la condición"
+          />
+        )}
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <ConfirmationSelect
+            label="¿Con qué pronombres te identificas?"
+            value={form.pronoun}
+            onChange={(value) => {
+              updateField('pronoun', value);
+              if (value !== 'otro') {
+                updateField('pronounOther', '');
+              }
+            }}
+            options={confirmationPronounOptions}
+            required
+            error={errors.pronoun}
+          />
+
+          <ConfirmationSelect
+            label="¿Cuál es tu tipo de sangre (RH)?"
+            value={form.bloodTypeId}
+            onChange={(value) => updateField('bloodTypeId', value)}
+            options={confirmationBloodTypes.map((item) => ({
+              value: item.id,
+              label: item.label,
+            }))}
+            placeholder="Selecciona tu RH"
+          />
+        </div>
+
+        {form.pronoun === 'otro' && (
+          <ConfirmationTextInput
+            label="¿Cuál pronombre debemos usar?"
+            value={form.pronounOther}
+            onChange={(value) => updateField('pronounOther', value)}
+            required
+            error={errors.pronounOther}
+            placeholder="Escribe el pronombre"
+          />
+        )}
+
+        <ConfirmationTextInput
+          label="¿Cuál es tu EPS actual?"
+          value={form.epsId}
+          onChange={(value) => updateField('epsId', value)}
+          required
+          error={errors.epsId}
+          placeholder="Escribe el nombre de tu EPS"
+        />
+
+        <div className="rounded-2xl border border-amber-300/40 bg-amber-400/10 p-4 text-sm text-amber-100">
+          Esta información puede considerarse sensible. Antes de enviar, debes
+          autorizar su tratamiento para fines logísticos y de cuidado durante la
+          actividad.
+        </div>
+
+        <div>
+          <label className="flex items-start gap-3 rounded-2xl border border-white/15 bg-slate-900/45 p-4">
+            <input
+              type="checkbox"
+              checked={form.consentHealthData}
+              onChange={(e) =>
+                updateField('consentHealthData', e.target.checked)
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-500 bg-slate-900 text-fuchsia-400"
+            />
+            <span className="text-sm text-slate-200">
+              Autorizo el tratamiento de esta información para la gestión del
+              evento y la atención en caso de ser necesaria.
+            </span>
+          </label>
+          <ConfirmationFieldError message={errors.consentHealthData} />
+        </div>
+      </ConfirmationSection>
+
+      <ConfirmationSection
+        title="Contacto de emergencia"
+        subtitle="Persona a quien se puede contactar en caso de emergencia."
+      >
+        <div className="grid gap-5 md:grid-cols-2">
+          <ConfirmationTextInput
+            label="Nombre del contacto de emergencia"
+            value={form.emergencyContactName}
+            onChange={(value) => updateField('emergencyContactName', value)}
+            required
+            error={errors.emergencyContactName}
+          />
+
+          <ConfirmationSelect
+            label="Parentesco o relación"
+            value={form.emergencyContactRelationship}
+            onChange={(value) =>
+              updateField('emergencyContactRelationship', value)
+            }
+            options={confirmationRelationshipOptions}
+            required
+            error={errors.emergencyContactRelationship}
+          />
+        </div>
+
+        <ConfirmationTextInput
+          label="Número de celular del contacto de emergencia"
+          value={form.emergencyContactPhone}
+          onChange={(value) => updateField('emergencyContactPhone', value)}
+          required
+          error={errors.emergencyContactPhone}
+          placeholder="Ej. 3001234567"
+        />
+      </ConfirmationSection>
+
+      <ConfirmationSection
+        title="Hospedaje"
+        subtitle="Cuéntanos cómo planeas movilizarte durante el evento para apoyar la logística de reconfirmación."
+      >
+        <ConfirmationSelect
+          label="Hospedaje registrado previamente"
+          value={form.lodgingChoice}
+          onChange={(value) => {
+            updateField('lodgingChoice', value);
+            if (value === 'Planea Acampar') {
+              updateField('lodgingAddress', 'UNAL, Campus La Nubia');
+            }
+          }}
+          options={confirmationLodgingOptions}
+          required
+          error={errors.lodgingChoice}
+        />
+
+        {form.lodgingChoice !== '' && form.lodgingChoice !== 'Planea Acampar' && (
+          <ConfirmationTextInput
+            label="Dirección del alojamiento (opcional, pero recomendada en caso de emergencia)"
+            value={form.lodgingAddress}
+            onChange={(value) => updateField('lodgingAddress', value)}
+            placeholder="Ej. Calle 45 # 12-34, Barrio Centro"
+          />
+        )}
+
+        {form.lodgingChoice === 'Planea Acampar' && (
+          <ConfirmationTextInput
+            label="Dirección del alojamiento"
+            value="UNAL, Campus La Nubia"
+            onChange={() => undefined}
+            disabled
+          />
+        )}
+      </ConfirmationSection>
+
+      <ConfirmationSection
+        title="Transporte"
+        subtitle="Información independiente para la logística de movilidad."
+      >
+        <div className="rounded-2xl border border-emerald-300/40 bg-emerald-500/10 p-4 text-sm text-emerald-100">
+          Confirma y se compromete a hacer uso responsable del transporte, recursos y/o medios suministrados por la universidad, según la logística definida para el evento.
+        </div>
+
+        <ConfirmationSelect
+          label="Transporte"
+          value={form.transport}
+          onChange={(value) =>
+            updateField('transport', value as '' | 'SI' | 'PROPIOS_MEDIOS')
+          }
+          options={[
+            {
+              value: 'SI',
+              label:
+                'Sí, me comprometo a hacer uso responsable del transporte, recursos y/o medios suministrados por la universidad',
+            },
+            {
+              value: 'PROPIOS_MEDIOS',
+              label:
+                'No, me comprometo a movilizarme por medio de mis propios recursos',
+            },
+          ]}
+          required
+          error={errors.transport}
+          placeholder="Selecciona una opción"
+        />
+      </ConfirmationSection>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+        {onCancel && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-2xl border border-white/20 bg-slate-900/60 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:border-white/35 hover:text-white"
+          >
+            Cancelar
+          </button>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-2xl bg-[#1f2b5b] px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isSubmitting ? 'Enviando...' : 'Enviar'}
+        </button>
+      </div>
+
+      {submitError && (
+        <div className="rounded-2xl border border-rose-300/40 bg-rose-500/15 p-4 text-sm text-rose-100">
+          {submitError}
+        </div>
+      )}
+
+      {selectedHealthOptions.length > 0 && (
+        <div className="rounded-2xl border border-fuchsia-300/30 bg-fuchsia-500/10 p-4 text-sm text-slate-200">
+          <span className="font-semibold text-fuchsia-200">Resumen rápido:</span>{' '}
+          {selectedHealthOptions.map((item) => item.label).join(', ')}
+        </div>
+      )}
+    </form>
+  );
+}
