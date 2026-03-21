@@ -269,7 +269,12 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
         r.answers,
         r.allergy_specify,
         r.confirm_answers,
-        r.final_submitted_at
+        r.final_submitted_at,
+        EXISTS (
+          SELECT 1
+          FROM attendees a
+          WHERE a.attendee_id = r.id::text
+        ) AS has_attendee_submission
       FROM registrations r
       LEFT JOIN confirmation_submissions cs ON cs.registration_id = r.id
       WHERE lower(trim(r.email)) = lower(trim(${authUser.email}))
@@ -287,9 +292,19 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
       allergy_specify: string | null;
       confirm_answers: unknown;
       final_submitted_at: string | Date | null;
+      has_attendee_submission: boolean;
     }>;
 
     const registration = rows[0];
+    if (registration?.has_attendee_submission) {
+      return {
+        redirect: {
+          destination: '/',
+          permanent: false,
+        },
+      };
+    }
+
     const firstName = registration?.first_name?.trim() ?? '';
     const lastName = registration?.last_name?.trim() ?? '';
     const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || fallbackName;
