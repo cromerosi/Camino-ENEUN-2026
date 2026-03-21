@@ -8,6 +8,7 @@ import {
   getSessionCookieName,
   isAllowedUnalEmail,
 } from '../../../lib/auth';
+import { getSql } from '../../../lib/db';
 
 function redirect(res: NextApiResponse, destination: string): void {
   res.writeHead(303, { Location: destination });
@@ -77,6 +78,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         clearCookie(getSessionCookieName()),
       ]);
       redirect(res, '/landing?error=forbidden_email_domain');
+      return;
+    }
+
+    const sql = getSql();
+    const registrations = (await sql`
+      SELECT 1
+      FROM registrations
+      WHERE lower(trim(email)) = lower(trim(${email}))
+      LIMIT 1
+    `) as Array<{ '?column?': number }>;
+
+    if (registrations.length === 0) {
+      res.setHeader('Set-Cookie', [
+        clearCookie(getAuthStateCookieName()),
+        clearCookie(getAuthPkceCookieName()),
+        clearCookie(getSessionCookieName()),
+      ]);
+      redirect(res, '/landing?error=not_registered');
       return;
     }
 

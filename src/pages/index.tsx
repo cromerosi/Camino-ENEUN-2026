@@ -3,6 +3,7 @@ import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
+import { getSql } from '../lib/db';
 import {
   getJourneyStepsByEmail,
   getParticipantByEmail,
@@ -251,6 +252,39 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
         permanent: false,
       },
     };
+  }
+
+  if (!isAdminPreview) {
+    try {
+      const sql = getSql();
+      const registrations = (await sql`
+        SELECT 1
+        FROM registrations
+        WHERE lower(trim(email)) = lower(trim(${targetEmail}))
+        LIMIT 1
+      `) as Array<{ '?column?': number }>;
+
+      if (registrations.length === 0) {
+        const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+        context.res.setHeader(
+          'Set-Cookie',
+          `${getSessionCookieName()}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
+        );
+        return {
+          redirect: {
+            destination: '/landing?error=not_registered',
+            permanent: false,
+          },
+        };
+      }
+    } catch {
+      return {
+        redirect: {
+          destination: '/landing?error=not_registered',
+          permanent: false,
+        },
+      };
+    }
   }
 
   const participant = await getParticipantByEmail(targetEmail);
