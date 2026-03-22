@@ -29,6 +29,10 @@ interface RegistrationRow {
   final_submitted_at?: string | Date | null;
   attendee_submitted_at?: string | Date | null;
   confirmation_campus?: string | null;
+  attendee_identification_number?: string | null;
+  attendee_lodging_choice?: string | null;
+  attendee_camping_confirmation?: string | null;
+  attendee_updated_at?: string | Date | null;
 }
 
 interface ValidationProgress {
@@ -101,6 +105,32 @@ function resolveCamping(ticketType: string | null, confirmAnswers: unknown): boo
   }
 
   return parseCamping(ticketType);
+}
+
+function parseCampingFromAttendee(row: RegistrationRow | undefined): boolean | null {
+  if (!row) {
+    return null;
+  }
+
+  const campingConfirmation = row.attendee_camping_confirmation?.trim().toUpperCase();
+  if (campingConfirmation === 'YES') {
+    return true;
+  }
+
+  if (campingConfirmation === 'NO') {
+    return false;
+  }
+
+  const lodgingChoice = normalizeAnswer(row.attendee_lodging_choice ?? '');
+  if (lodgingChoice === 'planea acampar') {
+    return true;
+  }
+
+  if (lodgingChoice) {
+    return false;
+  }
+
+  return null;
 }
 
 function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
@@ -304,18 +334,25 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
     const sql = getSql();
     const registrationRows = (await sql`
       SELECT
-        first_name,
-        last_name,
-        document_type,
-        document_number,
-        university,
-        faculty,
-        ticket_type,
-        uuid,
-        confirm_answers
-      FROM registrations
-      WHERE lower(email) = lower(${email})
-      ORDER BY registered_at DESC
+        r.id,
+        r.first_name,
+        r.last_name,
+        r.document_type,
+        r.document_number,
+        r.university,
+        r.faculty,
+        r.ticket_type,
+        r.uuid,
+        r.confirm_answers,
+        a.identification_number AS attendee_identification_number,
+        a.lodging_choice AS attendee_lodging_choice,
+        a.camping_confirmation AS attendee_camping_confirmation,
+        a.updated_at AS attendee_updated_at
+      FROM registrations r
+      LEFT JOIN attendees a
+        ON a.attendee_id = r.id::text
+      WHERE lower(r.email) = lower(${email})
+      ORDER BY COALESCE(a.updated_at, r.registered_at) DESC NULLS LAST, r.registered_at DESC
       LIMIT 1
     `) as RegistrationRow[];
 
@@ -328,13 +365,21 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
     const lastName = registration.last_name?.trim() ?? '';
     const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
 
+    const campingFromAttendee = parseCampingFromAttendee(registration);
+    const resolvedDocumentNumber =
+      registration.attendee_identification_number?.trim() ||
+      registration.document_number?.trim() ||
+      'No disponible';
+
     return {
       fullName,
       documentType: registration.document_type?.trim() || 'No disponible',
-      documentNumber: registration.document_number?.trim() || 'No disponible',
+      documentNumber: resolvedDocumentNumber,
       site: registration.university?.trim() || 'No disponible',
       faculty: registration.faculty?.trim() || 'No disponible',
-      camping: resolveCamping(registration.ticket_type, registration.confirm_answers),
+      camping:
+        campingFromAttendee ??
+        resolveCamping(registration.ticket_type, registration.confirm_answers),
       committee: parseCommitteeFromConfirmAnswers(registration.confirm_answers),
       uuid: registration.uuid?.trim() || 'No disponible',
     };
@@ -424,17 +469,20 @@ export async function authenticateWithDocument(
     const sql = getSql();
     const registrationRows = (await sql`
       SELECT
-        email,
-        first_name,
-        last_name,
-        document_number
-      FROM registrations
-      WHERE lower(trim(email)) = lower(trim(${email}))
+        r.email,
+        r.first_name,
+        r.last_name,
+        r.document_number,
+        a.identification_number AS attendee_identification_number
+      FROM registrations r
+      LEFT JOIN attendees a
+        ON a.attendee_id = r.id::text
+      WHERE lower(trim(r.email)) = lower(trim(${email}))
         AND (
-          regexp_replace(coalesce(document_number, ''), '[^0-9]', '', 'g') = regexp_replace(${normalizedDocument}, '[^0-9]', '', 'g')
-          OR lower(trim(coalesce(document_number, ''))) = lower(trim(${normalizedDocument}))
+          regexp_replace(coalesce(a.identification_number, r.document_number, ''), '[^0-9]', '', 'g') = regexp_replace(${normalizedDocument}, '[^0-9]', '', 'g')
+          OR lower(trim(coalesce(a.identification_number, r.document_number, ''))) = lower(trim(${normalizedDocument}))
         )
-      ORDER BY registered_at DESC
+      ORDER BY COALESCE(a.updated_at, r.registered_at) DESC NULLS LAST, r.registered_at DESC
       LIMIT 1
     `) as RegistrationRow[];
 

@@ -42,6 +42,7 @@ export function ConfirmationAttendeeForm({
     Partial<Record<keyof ConfirmationFormData, string>>
   >({});
   const [submitError, setSubmitError] = useState<string>('');
+  const [submitValidationMessage, setSubmitValidationMessage] = useState<string>('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -49,6 +50,7 @@ export function ConfirmationAttendeeForm({
     setForm(createConfirmationInitialData(prefill, initialData));
     setErrors({});
     setSubmitError('');
+    setSubmitValidationMessage('');
   }, [prefill, initialData]);
 
   const selectedHealthOptions = useMemo(
@@ -65,6 +67,7 @@ export function ConfirmationAttendeeForm({
   ) {
     setForm((prev) => ({ ...prev, [key]: value }));
     setErrors((prev) => ({ ...prev, [key]: undefined }));
+    setSubmitValidationMessage('');
   }
 
   function handleToggleHealthCondition(code: ConfirmationHealthConditionCode) {
@@ -81,6 +84,7 @@ export function ConfirmationAttendeeForm({
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitError('');
+    setSubmitValidationMessage('');
 
     const cleanedForm = clearUnusedHealthDetailFields({
       ...form,
@@ -111,7 +115,10 @@ export function ConfirmationAttendeeForm({
     const nextErrors = validateConfirmationForm(cleanedForm);
     setErrors(nextErrors);
 
-    if (Object.keys(nextErrors).length > 0) return;
+    if (Object.keys(nextErrors).length > 0) {
+      setSubmitValidationMessage('Hay campos obligatorios pendientes. Revísalos antes de enviar.');
+      return;
+    }
 
     try {
       setIsSubmitting(true);
@@ -552,6 +559,12 @@ export function ConfirmationAttendeeForm({
       {submitError && (
         <div className="rounded-2xl border border-rose-300/40 bg-rose-500/15 p-4 text-sm text-rose-100">
           {submitError}
+        </div>
+      )}
+
+      {submitValidationMessage && (
+        <div className="rounded-2xl border border-amber-300/40 bg-amber-500/15 p-4 text-sm text-amber-100">
+          {submitValidationMessage}
         </div>
       )}
 

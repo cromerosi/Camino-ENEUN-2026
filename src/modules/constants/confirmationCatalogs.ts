@@ -129,8 +129,8 @@ export const confirmationRelationshipOptions: ConfirmationRelationshipOption[] =
 
 export const confirmationLodgingOptions: ConfirmationLodgingOption[] = [
   {
-    value: "Holtel, Hostal, Airbnb, etc...",
-    label: "Holtel, Hostal, Airbnb, etc...",
+    value: "Hotel, Hostal, Airbnb, etc...",
+    label: "Hotel, Hostal, Airbnb, etc...",
   },
   {
     value: "Casa de familiar o amistad",
