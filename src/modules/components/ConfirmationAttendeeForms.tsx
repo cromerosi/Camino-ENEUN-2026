@@ -61,6 +61,69 @@ export function ConfirmationAttendeeForm({
     [form.healthConditionCodes]
   );
 
+  const healthSummary = useMemo(() => {
+    if (form.healthConditionCodes.includes('PREFER_NOT_TO_ANSWER')) {
+      return 'Prefiere no responder';
+    }
+
+    if (form.healthConditionCodes.includes('NONE')) {
+      return 'Sin condiciones reportadas';
+    }
+
+    return selectedHealthOptions.map((item) => item.label).join(', ') || 'Sin condiciones reportadas';
+  }, [form.healthConditionCodes, selectedHealthOptions]);
+
+  const pronounSummary = useMemo(() => {
+    if (!form.pronoun) {
+      return 'Sin seleccionar';
+    }
+
+    if (form.pronoun === 'otro') {
+      return form.pronounOther.trim() || 'Otro (sin especificar)';
+    }
+
+    const option = confirmationPronounOptions.find((item) => item.value === form.pronoun);
+    return option?.label ?? form.pronoun;
+  }, [form.pronoun, form.pronounOther]);
+
+  const transportSummary = useMemo(() => {
+    if (form.transport === 'SI') {
+      return 'Usará transporte suministrado por la universidad';
+    }
+
+    if (form.transport === 'PROPIOS_MEDIOS') {
+      return 'Se movilizará por medios propios';
+    }
+
+    return 'Sin seleccionar';
+  }, [form.transport]);
+
+  const emergencySummary = useMemo(() => {
+    const name = form.emergencyContactName.trim();
+    const relationship = form.emergencyContactRelationship.trim();
+    const phone = form.emergencyContactPhone.trim();
+
+    if (!name && !phone) {
+      return 'Sin completar';
+    }
+
+    const relationshipText = relationship ? ` (${relationship})` : '';
+    const phoneText = phone ? ` - ${phone}` : '';
+    return `${name || 'Sin nombre'}${relationshipText}${phoneText}`;
+  }, [form.emergencyContactName, form.emergencyContactPhone, form.emergencyContactRelationship]);
+
+  const lodgingAddressSummary = useMemo(() => {
+    if (!form.lodgingChoice) {
+      return 'Sin seleccionar';
+    }
+
+    if (form.lodgingChoice === 'Planea Acampar') {
+      return 'UNAL, Campus La Nubia';
+    }
+
+    return form.lodgingAddress.trim() || 'No registrada';
+  }, [form.lodgingAddress, form.lodgingChoice]);
+
   function updateField<K extends keyof ConfirmationFormData>(
     key: K,
     value: ConfirmationFormData[K]
@@ -568,12 +631,43 @@ export function ConfirmationAttendeeForm({
         </div>
       )}
 
-      {selectedHealthOptions.length > 0 && (
-        <div className="rounded-2xl border border-fuchsia-300/30 bg-fuchsia-500/10 p-4 text-sm text-slate-200">
-          <span className="font-semibold text-fuchsia-200">Resumen rápido:</span>{' '}
-          {selectedHealthOptions.map((item) => item.label).join(', ')}
+      <div className="rounded-2xl border border-fuchsia-300/30 bg-fuchsia-500/10 p-5 text-sm text-slate-200">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-fuchsia-200">
+            Resumen antes de enviar
+          </span>
+          <span className="rounded-full border border-fuchsia-200/30 bg-fuchsia-400/10 px-3 py-1 text-[11px] text-fuchsia-100">
+            Verifica tus datos
+          </span>
         </div>
-      )}
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Identificación</p>
+            <p className="mt-2 text-slate-100"><span className="text-slate-400">Documento:</span> {form.id.trim() || 'Sin definir'}</p>
+            <p className="mt-1 text-slate-100"><span className="text-slate-400">Escarapela:</span> {form.badgeName.trim() || 'Sin definir'}</p>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Salud</p>
+            <p className="mt-2 text-slate-100"><span className="text-slate-400">Pronombre:</span> {pronounSummary}</p>
+            <p className="mt-1 text-slate-100"><span className="text-slate-400">EPS:</span> {form.epsId.trim() || 'Sin definir'}</p>
+            <p className="mt-1 text-slate-100"><span className="text-slate-400">Condiciones:</span> {healthSummary}</p>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Emergencia</p>
+            <p className="mt-2 text-slate-100">{emergencySummary}</p>
+          </div>
+
+          <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Logística</p>
+            <p className="mt-2 text-slate-100"><span className="text-slate-400">Hospedaje:</span> {form.lodgingChoice || 'Sin seleccionar'}</p>
+            <p className="mt-1 text-slate-100"><span className="text-slate-400">Dirección:</span> {lodgingAddressSummary}</p>
+            <p className="mt-1 text-slate-100"><span className="text-slate-400">Transporte:</span> {transportSummary}</p>
+          </div>
+        </div>
+      </div>
     </form>
   );
 }
