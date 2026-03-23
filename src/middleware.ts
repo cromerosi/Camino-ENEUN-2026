@@ -3,8 +3,43 @@ import { NextResponse } from 'next/server';
 import { getSessionCookieName, verifySignedSessionToken } from './lib/auth';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from './lib/admin-auth';
 
+const MAINTENANCE_MODE = true;
+const MAINTENANCE_PATH = '/mantenimiento';
+
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+
+  if (MAINTENANCE_MODE) {
+    const isMaintenanceRoute = pathname === MAINTENANCE_PATH;
+    const isStaticAsset =
+      pathname.startsWith('/_next') ||
+      pathname === '/favicon.ico' ||
+      pathname === '/eneun.ico' ||
+      pathname === '/eneun.svg';
+
+    if (pathname.startsWith('/api')) {
+      return NextResponse.json(
+        {
+          message: 'La plataforma se encuentra en mantenimiento. Intenta nuevamente mas tarde.',
+        },
+        {
+          status: 503,
+          headers: {
+            'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+          },
+        }
+      );
+    }
+
+    if (!isMaintenanceRoute && !isStaticAsset) {
+      const url = request.nextUrl.clone();
+      url.pathname = MAINTENANCE_PATH;
+      url.search = '';
+      return NextResponse.redirect(url);
+    }
+
+    return NextResponse.next();
+  }
 
   // --- ADMIN ROUTES ---
   if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
