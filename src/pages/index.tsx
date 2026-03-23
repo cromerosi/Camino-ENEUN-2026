@@ -368,7 +368,7 @@ export default function DashboardPage({
                 <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
                   {currentJourneySteps.map((step: EneunJourneyStepState, index: number) => {
                     const isTrainingStep = step.label === 'Capacitaciones de la plataforma';
-                    const style = isTrainingStep ? STATUS_STYLES.purple : getStatusStyle(step.status);
+                    const style = isTrainingStep && step.status !== 'green' ? STATUS_STYLES.purple : getStatusStyle(step.status);
 
                     if (isTrainingStep) {
                       return (
