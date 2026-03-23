@@ -57,7 +57,14 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 };
 
 export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }: AdminSedeProps) {
-  const isSpnAdmin = adminUsername.trim().toLowerCase() === 'spn';
+  const normalizedUsername = adminUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedName = adminName.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const combinedIdentity = `${normalizedUsername}${normalizedName}`;
+  const isSpnAdmin =
+    normalizedUsername === 'spn' ||
+    normalizedName === 'spn' ||
+    combinedIdentity === 'adminspn' ||
+    combinedIdentity === 'spnadmin';
   const [validations, setValidations] = useState<Validation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newValName, setNewValName] = useState('');
