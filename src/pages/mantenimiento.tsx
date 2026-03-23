@@ -13,11 +13,10 @@ export default function MantenimientoPage() {
           <p className="text-xs uppercase tracking-[0.45em] text-amber-300">ENEUN 2026</p>
           <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Pagina en mantenimiento</h1>
           <p className="mx-auto mt-6 max-w-xl text-base text-slate-300">
-            Estamos realizando ajustes para mejorar la plataforma. El acceso esta temporalmente
-            deshabilitado para participantes y administradores.
+            Estamos realizando ajustes para mejorar la plataforma por parte del equipo de TI. El acceso esta temporalmente deshabilitado para participantes y administradores.
           </p>
           <p className="mx-auto mt-4 max-w-xl text-sm uppercase tracking-[0.2em] text-slate-500">
-            Intenta nuevamente mas tarde
+            Intenta nuevamente mas tarde y consulta con tus representantes.
           </p>
         </section>
       </main>
