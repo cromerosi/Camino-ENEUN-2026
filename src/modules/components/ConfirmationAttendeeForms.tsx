@@ -27,6 +27,8 @@ import { ConfirmationSelect } from './ConfirmationSelect';
 import { ConfirmationCheckboxCard } from './ConfirmationCheckboxCard';
 import { ConfirmationFieldError } from './ConfirmationFieldError';
 
+const BADGE_NAME_RECOMMENDED_MAX_LENGTH = 18;
+
 export function ConfirmationAttendeeForm({
   prefill,
   initialData,
@@ -123,6 +125,23 @@ export function ConfirmationAttendeeForm({
 
     return form.lodgingAddress.trim() || 'No registrada';
   }, [form.lodgingAddress, form.lodgingChoice]);
+
+  const badgeNameWarning = useMemo(() => {
+    const trimmedBadgeName = form.badgeName.trim();
+    if (!trimmedBadgeName) {
+      return '';
+    }
+
+    const nameParts = trimmedBadgeName.split(/\s+/).filter(Boolean);
+    const hasTwoOrMoreNames = nameParts.length >= 2;
+    const hasTooManyCharacters = trimmedBadgeName.length > BADGE_NAME_RECOMMENDED_MAX_LENGTH;
+
+    if (!hasTwoOrMoreNames && !hasTooManyCharacters) {
+      return '';
+    }
+
+    return 'El equipo de T.I (Tecnologia, e Informacion - ENEUN 2026) te recomienda cambiar este nombre por uno mas corto para la escarapela.';
+  }, [form.badgeName]);
 
   function updateField<K extends keyof ConfirmationFormData>(
     key: K,
@@ -242,8 +261,16 @@ export function ConfirmationAttendeeForm({
           onChange={(value) => updateField('badgeName', value)}
           required
           error={errors.badgeName}
-          placeholder="Lo precargamos con tu nombre legal, pero puedes editarlo"
+          placeholder="Escribe el nombre con el que te sientes cómodx"
         />
+        <p className="-mt-2 text-xs text-slate-300">
+          Este nombre es el que verá la gente en tu escarapela. Escribe el nombre con el que te sientes cómodx y evita poner nuevamente tu nombre completo.
+        </p>
+        {badgeNameWarning && (
+          <div className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs text-amber-100">
+            {badgeNameWarning}
+          </div>
+        )}
 
         <ConfirmationTextInput
           label="Nombre legal (no editable)"
