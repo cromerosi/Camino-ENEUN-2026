@@ -9,6 +9,7 @@ import type {
 import Layout from '../layouts/Layout';
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import { getSql } from '../lib/db';
+import { getFinalFormAccessForEmail } from '../lib/final-form-access';
 
 type SaveStatus = 'idle' | 'success' | 'error';
 
@@ -301,6 +302,16 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
   }
 
   const fallbackName = authUser.name?.trim() || authUser.email;
+
+  const access = await getFinalFormAccessForEmail(authUser.email);
+  if (!access.canAccess) {
+    return {
+      redirect: {
+        destination: '/?finalFormStatus=closed',
+        permanent: false,
+      },
+    };
+  }
 
   try {
     const sql = getSql();

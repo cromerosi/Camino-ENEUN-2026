@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSessionCookieName, verifySignedSessionToken } from '../../../lib/auth';
 import { getSql } from '../../../lib/db';
+import { getFinalFormAccessForEmail } from '../../../lib/final-form-access';
 
 type CampingConfirmation = '' | 'YES' | 'NO';
 type TransportSelection = '' | 'SI' | 'PROPIOS_MEDIOS';
@@ -275,6 +276,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!authUser?.email) {
     return res.status(401).json({ error: 'No autorizado' });
+  }
+
+  const access = await getFinalFormAccessForEmail(authUser.email);
+  if (!access.canAccess) {
+    return res.status(403).json({ error: 'El formulario final está cerrado en este momento.' });
   }
 
   const payload = parsePayload(req.body);

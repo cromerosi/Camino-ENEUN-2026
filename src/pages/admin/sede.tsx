@@ -28,6 +28,11 @@ interface Student {
   validations: StudentValidation[];
 }
 
+interface FinalFormAllowedUser {
+  email: string;
+  updated_at: string;
+}
+
 export const getServerSideProps: GetServerSideProps = async (context) => {
   const token = context.req.cookies[getAdminSessionCookieName()];
   const session = await verifyAdminSessionToken(token);
@@ -64,6 +69,11 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
   const [scrapValidationId, setScrapValidationId] = useState<number | ''>('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ success: number; unmatched: string[] } | null>(null);
+  const [finalFormOpen, setFinalFormOpen] = useState(false);
+  const [finalFormLoading, setFinalFormLoading] = useState(false);
+  const [finalFormEmail, setFinalFormEmail] = useState('');
+  const [allowedUsers, setAllowedUsers] = useState<FinalFormAllowedUser[]>([]);
+  const [finalFormStatusMessage, setFinalFormStatusMessage] = useState('');
 
   const router = useRouter();
 
@@ -78,6 +88,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
 
   useEffect(() => {
     fetchData();
+    fetchFinalFormAccess();
   }, []);
 
   const fetchData = async () => {
@@ -99,6 +110,96 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchFinalFormAccess = async () => {
+    try {
+      const response = await fetch('/api/admin/final-form-access');
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json() as {
+        isOpen?: boolean;
+        allowedUsers?: FinalFormAllowedUser[];
+      };
+
+      setFinalFormOpen(Boolean(data.isOpen));
+      setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  const handleSetGlobalFinalFormState = async (nextState: boolean) => {
+    setFinalFormLoading(true);
+    setFinalFormStatusMessage('');
+
+    try {
+      const response = await fetch('/api/admin/final-form-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isOpen: nextState }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'No se pudo actualizar el estado global' }));
+        setFinalFormStatusMessage(errorData.error || 'No se pudo actualizar el estado global');
+        return;
+      }
+
+      const data = await response.json() as { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] };
+      setFinalFormOpen(Boolean(data.isOpen));
+      setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
+      setFinalFormStatusMessage(nextState ? 'Formulario final abierto globalmente.' : 'Formulario final cerrado globalmente.');
+    } catch (error) {
+      console.error(error);
+      setFinalFormStatusMessage('Error de red al actualizar el estado global.');
+    } finally {
+      setFinalFormLoading(false);
+    }
+  };
+
+  const handleSetUserFinalFormAccess = async (allow: boolean, emailOverride?: string) => {
+    const email = (emailOverride ?? finalFormEmail).trim().toLowerCase();
+    if (!email) {
+      setFinalFormStatusMessage('Debes ingresar un correo válido.');
+      return;
+    }
+
+    setFinalFormLoading(true);
+    setFinalFormStatusMessage('');
+
+    try {
+      const response = await fetch('/api/admin/final-form-access', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, allow }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'No se pudo actualizar el permiso del usuario' }));
+        setFinalFormStatusMessage(errorData.error || 'No se pudo actualizar el permiso del usuario');
+        return;
+      }
+
+      const data = await response.json() as { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] };
+      setFinalFormOpen(Boolean(data.isOpen));
+      setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
+      setFinalFormStatusMessage(
+        allow
+          ? `Usuario habilitado mientras el formulario esté cerrado: ${email}`
+          : `Permiso removido para: ${email}`,
+      );
+      if (!emailOverride) {
+        setFinalFormEmail('');
+      }
+    } catch (error) {
+      console.error(error);
+      setFinalFormStatusMessage('Error de red al actualizar el permiso del usuario.');
+    } finally {
+      setFinalFormLoading(false);
     }
   };
 
@@ -365,6 +466,89 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
       </nav>
 
       <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Formulario final</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Control de apertura</h2>
+              <p className="mt-1 text-sm text-slate-400">Define si el formulario final está abierto para todos o solo para usuarios habilitados.</p>
+              <p className="mt-3 inline-flex rounded-full border border-white/15 bg-slate-900/50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-200">
+                Estado actual: {finalFormOpen ? 'Abierto' : 'Cerrado'}
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleSetGlobalFinalFormState(true)}
+                disabled={finalFormLoading || finalFormOpen}
+                className="rounded-2xl border border-emerald-300/30 bg-emerald-400/20 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100 transition hover:bg-emerald-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Abrir global
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSetGlobalFinalFormState(false)}
+                disabled={finalFormLoading || !finalFormOpen}
+                className="rounded-2xl border border-rose-300/30 bg-rose-400/20 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-rose-100 transition hover:bg-rose-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cerrar global
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Permitir usuario cuando esté cerrado</p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                <input
+                  type="email"
+                  placeholder="correo@ejemplo.com"
+                  value={finalFormEmail}
+                  onChange={(e) => setFinalFormEmail(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSetUserFinalFormAccess(true)}
+                  disabled={finalFormLoading}
+                  className="rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Habilitar correo
+                </button>
+              </div>
+
+              {finalFormStatusMessage && (
+                <p className="mt-3 text-sm text-slate-300">{finalFormStatusMessage}</p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Correos habilitados ({allowedUsers.length})</p>
+              <div className="mt-3 max-h-40 overflow-y-auto rounded-2xl border border-white/10 bg-slate-900/50 p-3">
+                {allowedUsers.length === 0 ? (
+                  <p className="text-sm text-slate-400">No hay correos habilitados.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {allowedUsers.map((user) => (
+                      <li key={user.email} className="flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-200">
+                        <span className="truncate">{user.email}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetUserFinalFormAccess(false, user.email)}
+                          disabled={finalFormLoading}
+                          className="rounded-lg border border-rose-300/30 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Quitar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div>

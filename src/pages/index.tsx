@@ -186,6 +186,7 @@ interface DashboardPageProps {
   finalFormUrl: string | null;
   showFinalFormSubmittedAlert: boolean;
   showPreconfirmationRequiredAlert: boolean;
+  showFinalFormClosedAlert: boolean;
   attendeeData: Record<string, unknown> | null;
 }
 
@@ -200,6 +201,7 @@ export default function DashboardPage({
   finalFormUrl,
   showFinalFormSubmittedAlert,
   showPreconfirmationRequiredAlert,
+  showFinalFormClosedAlert,
   attendeeData,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
@@ -241,6 +243,12 @@ export default function DashboardPage({
             {showPreconfirmationRequiredAlert && (
               <div className="mx-auto mt-6 max-w-3xl rounded-2xl border border-rose-300/35 bg-rose-500/15 px-5 py-3 text-sm text-rose-100">
                 Debes completar primero la preconfirmación para poder acceder al formulario final.
+              </div>
+            )}
+
+            {showFinalFormClosedAlert && (
+              <div className="mx-auto mt-6 max-w-3xl rounded-2xl border border-amber-300/35 bg-amber-500/15 px-5 py-3 text-sm text-amber-100">
+                El formulario final está cerrado en este momento. Si necesitas habilitación, contacta a tu equipo organizador.
               </div>
             )}
           </header>
@@ -511,6 +519,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       finalFormUrl,
       showFinalFormSubmittedAlert: finalFormStatus === 'already-submitted',
       showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
+      showFinalFormClosedAlert: finalFormStatus === 'closed',
       attendeeData,
     },
   };
