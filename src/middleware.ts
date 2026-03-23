@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import { getSessionCookieName, verifySignedSessionToken } from './lib/auth';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from './lib/admin-auth';
 
-const MAINTENANCE_MODE = true;
+const MAINTENANCE_MODE = false; // Cambia a true para activar el modo mantenimiento
 const MAINTENANCE_PATH = '/mantenimiento';
 
 export async function middleware(request: NextRequest) {
