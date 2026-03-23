@@ -1,5 +1,6 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
@@ -204,6 +205,25 @@ export default function DashboardPage({
   showFinalFormClosedAlert,
   attendeeData,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const { data: journeyData } = useQuery({
+    queryKey: ['journeyStatus', authEmail],
+    queryFn: async () => {
+      const res = await fetch('/api/journey-status');
+      if (!res.ok) {
+        throw new Error('Error al obtener el estado');
+      }
+      return res.json() as Promise<{ journeySteps: EneunJourneyStepState[] }>;
+    },
+    initialData: { journeySteps },
+    refetchInterval: 10000,
+    enabled: !isAdminPreview,
+  });
+
+  const currentJourneySteps = journeyData?.journeySteps ?? journeySteps;
+  const currentProgressPercent = Math.round(
+    (currentJourneySteps.filter((step: EneunJourneyStepState) => step.status === 'green').length / currentJourneySteps.length) * 100,
+  );
+
   const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
   const attendeeEntries = buildFriendlyAttendeeEntries(attendeeData);
 
@@ -336,17 +356,17 @@ export default function DashboardPage({
                   <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Camino ENEUN</p>
                   <h2 className="mt-3 text-2xl font-semibold text-white">Línea de progreso</h2>
                 </div>
-                <span className="text-4xl font-semibold text-emerald-300">{progressPercent}%</span>
+                <span className="text-4xl font-semibold text-emerald-300">{currentProgressPercent}%</span>
               </div>
               <div className="mt-6 h-2 rounded-full bg-white/10">
                 <div
                   className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-fuchsia-400 to-rose-400"
-                  style={{ width: `${progressPercent}%` }}
+                  style={{ width: `${currentProgressPercent}%` }}
                 ></div>
               </div>
               <div className="relative mt-10">
                 <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
-                  {journeySteps.map((step, index) => {
+                  {currentJourneySteps.map((step: EneunJourneyStepState, index: number) => {
                     const isTrainingStep = step.label === 'Capacitaciones de la plataforma';
                     const style = isTrainingStep ? STATUS_STYLES.purple : getStatusStyle(step.status);
 
@@ -368,7 +388,7 @@ export default function DashboardPage({
                               {STEP_LABELS[step.label] ?? step.label}
                             </p>
                             <p className={`mt-1 text-sm underline decoration-fuchsia-300/50 underline-offset-4 ${style.detail}`}>
-                              Ya está en curso. Haz clic aquí para ingresar.
+                              {step.detail}
                             </p>
                           </a>
                         </li>

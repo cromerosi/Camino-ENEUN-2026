@@ -1,4 +1,5 @@
 import { getSql } from './db';
+import { getTrainingSql } from './training-db';
 import { ENEUN_PROCESS_NODES, type EneunJourneyStepState } from './eneun-schema';
 
 export interface ParticipantViewModel {
@@ -38,6 +39,11 @@ interface RegistrationRow {
 interface ValidationProgress {
   totalValidations: number;
   completedValidations: number;
+}
+
+interface TrainingStatus {
+  completada: boolean;
+  updated_at: string | Date | null;
 }
 
 export interface LocalAuthUser {
@@ -216,9 +222,34 @@ async function getSedeValidationProgress(
   }
 }
 
+async function getTrainingStatusById(registrationId: number): Promise<TrainingStatus | null> {
+  try {
+    const sql = getTrainingSql();
+    const rows = (await sql`
+      SELECT completada, updated_at
+      FROM student_capacitaciones
+      WHERE student_registration_id = ${registrationId}
+      LIMIT 1
+    `) as Array<{ completada: boolean; updated_at: string | Date | null }>;
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return {
+      completada: rows[0].completada,
+      updated_at: rows[0].updated_at,
+    };
+  } catch (error) {
+    console.error('Error fetching training status:', error);
+    return null;
+  }
+}
+
 function buildJourneyStepsFromRegistration(
   registration: RegistrationRow | undefined,
   validationProgress: ValidationProgress,
+  trainingStatus: TrainingStatus | null,
 ): EneunJourneyStepState[] {
   if (!registration) {
     return ENEUN_PROCESS_NODES.map((label) => ({
@@ -231,6 +262,7 @@ function buildJourneyStepsFromRegistration(
   const preinscriptionDate = toJourneyDate(registration.registered_at);
   const preconfirmationDate = toJourneyDate(registration.confirm_submitted_at);
   const finalSubmissionDate = toJourneyDate(registration.attendee_submitted_at);
+  const trainingDate = toJourneyDate(trainingStatus?.updated_at);
 
   const hasPreconfirmation = Boolean(registration.confirm_submitted_at);
   const { totalValidations, completedValidations } = validationProgress;
@@ -286,8 +318,12 @@ function buildJourneyStepsFromRegistration(
     sedeValidationStatus,
     {
       label: 'Capacitaciones de la plataforma',
-      status: 'gray',
-      detail: 'Todavía no está habilitado',
+      status: trainingStatus?.completada ? 'green' : 'purple',
+      detail: trainingStatus?.completada
+        ? trainingDate
+          ? `Completado el ${trainingDate}`
+          : 'Completado'
+        : 'Ya está en curso. Haz clic aquí para ingresar.',
     },
     {
       label: 'Formulario final',
@@ -410,10 +446,14 @@ export async function getJourneyStepsByEmail(email: string): Promise<EneunJourne
 
     const registration = rows[0];
     if (!registration || !registration.id) {
-      return buildJourneyStepsFromRegistration(undefined, {
-        totalValidations: 0,
-        completedValidations: 0,
-      });
+      return buildJourneyStepsFromRegistration(
+        undefined,
+        {
+          totalValidations: 0,
+          completedValidations: 0,
+        },
+        null,
+      );
     }
 
     const campus = registration.confirmation_campus?.trim() || registration.university?.trim() || '';
@@ -429,12 +469,18 @@ export async function getJourneyStepsByEmail(email: string): Promise<EneunJourne
       LIMIT 1
     `) as Array<{ updated_at: string | Date | null }>;
 
+    const trainingStatus = await getTrainingStatusById(registration.id);
+
     const registrationWithFinalStep: RegistrationRow = {
       ...registration,
       attendee_submitted_at: attendeeRows[0]?.updated_at ?? null,
     };
 
-    return buildJourneyStepsFromRegistration(registrationWithFinalStep, validationProgress);
+    return buildJourneyStepsFromRegistration(
+      registrationWithFinalStep,
+      validationProgress,
+      trainingStatus,
+    );
   } catch {
     return ENEUN_PROCESS_NODES.map((label) => ({
       label,
