@@ -58,7 +58,7 @@ function normalizeAdminIdentity(value: string | undefined): string {
     .replace(/[^a-z0-9]/g, '');
 }
 
-export function isSpnAdminSession(session: Pick<AdminSession, 'username' | 'name'>): boolean {
+export function isSupremeAdminSession(session: Pick<AdminSession, 'username' | 'name'>): boolean {
   const rawUsername = (session.username ?? '').trim().toLowerCase();
   const rawName = (session.name ?? '').trim().toLowerCase();
   const normalizedUsername = normalizeAdminIdentity(session.username);
@@ -66,16 +66,15 @@ export function isSpnAdminSession(session: Pick<AdminSession, 'username' | 'name
   const combined = `${normalizedUsername}${normalizedName}`;
 
   return (
-    rawUsername === 'admin spn' ||
-    rawName === 'admin spn' ||
-    rawUsername === 'spn' ||
-    rawName === 'spn' ||
-    normalizedUsername === 'spn' ||
-    normalizedName === 'spn' ||
-    normalizedName === 'adminspn' ||
-    combined === 'adminspn' ||
-    combined === 'spnadmin' ||
-    combined.includes('adminspn')
+    rawUsername === 'admin supremo' ||
+    rawName === 'admin supremo' ||
+    rawUsername === 'supremo' ||
+    rawName === 'supremo' ||
+    normalizedUsername === 'adminsupremo' ||
+    normalizedName === 'adminsupremo' ||
+    combined === 'adminsupremo' ||
+    combined === 'supremoadmin' ||
+    combined.includes('adminsupremo')
   );
 }
 

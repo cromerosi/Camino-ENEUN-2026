@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   getAdminSessionCookieName,
-  isSpnAdminSession,
+  isSupremeAdminSession,
   verifyAdminSessionToken,
 } from '../../lib/admin-auth';
 
@@ -55,7 +55,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     props: {
       adminName: session.name,
       adminCampus: session.campus,
-      canManageFinalFormAccess: isSpnAdminSession(session),
+      canManageFinalFormAccess: isSupremeAdminSession(session),
     },
   };
 };

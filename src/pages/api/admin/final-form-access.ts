@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
   getAdminSessionCookieName,
-  isSpnAdminSession,
+  isSupremeAdminSession,
   verifyAdminSessionToken,
 } from '../../../lib/admin-auth';
 import {
@@ -27,8 +27,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'No autorizado' });
   }
 
-  if (!isSpnAdminSession(session)) {
-    return res.status(403).json({ error: 'Solo el usuario admin spn puede gestionar este control.' });
+  if (!isSupremeAdminSession(session)) {
+    return res.status(403).json({ error: 'Solo el usuario Admin SUPREMO puede gestionar este control.' });
   }
 
   if (req.method === 'GET') {
