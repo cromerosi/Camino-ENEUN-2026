@@ -1,5 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getAdminSessionCookieName, verifyAdminSessionToken } from '../../../lib/admin-auth';
+import {
+  getAdminSessionCookieName,
+  isSpnAdminSession,
+  verifyAdminSessionToken,
+} from '../../../lib/admin-auth';
 import {
   getFinalFormAccessForEmail,
   getFinalFormGlobalState,
@@ -15,18 +19,6 @@ function normalizeEmail(email: unknown): string {
   return email.trim().toLowerCase();
 }
 
-function normalizeIdentity(value: string | undefined): string {
-  return (value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function isSpnAdmin(username: string | undefined, name: string | undefined): boolean {
-  const u = normalizeIdentity(username);
-  const n = normalizeIdentity(name);
-  const combined = `${u}${n}`;
-
-  return u === 'spn' || n === 'spn' || combined === 'adminspn' || combined === 'spnadmin';
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const token = req.cookies[getAdminSessionCookieName()];
   const session = await verifyAdminSessionToken(token);
@@ -35,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: 'No autorizado' });
   }
 
-  if (!isSpnAdmin(session.username, session.name)) {
+  if (!isSpnAdminSession(session)) {
     return res.status(403).json({ error: 'Solo el usuario admin spn puede gestionar este control.' });
   }
 

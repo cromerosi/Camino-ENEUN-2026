@@ -50,6 +50,35 @@ export interface AdminSession {
   exp: number;
 }
 
+function normalizeAdminIdentity(value: string | undefined): string {
+  return (value ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+export function isSpnAdminSession(session: Pick<AdminSession, 'username' | 'name'>): boolean {
+  const rawUsername = (session.username ?? '').trim().toLowerCase();
+  const rawName = (session.name ?? '').trim().toLowerCase();
+  const normalizedUsername = normalizeAdminIdentity(session.username);
+  const normalizedName = normalizeAdminIdentity(session.name);
+  const combined = `${normalizedUsername}${normalizedName}`;
+
+  return (
+    rawUsername === 'admin spn' ||
+    rawName === 'admin spn' ||
+    rawUsername === 'spn' ||
+    rawName === 'spn' ||
+    normalizedUsername === 'spn' ||
+    normalizedName === 'spn' ||
+    normalizedName === 'adminspn' ||
+    combined === 'adminspn' ||
+    combined === 'spnadmin' ||
+    combined.includes('adminspn')
+  );
+}
+
 function normalizeCampusName(value: string): string {
   return value
     .normalize('NFD')

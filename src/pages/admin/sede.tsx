@@ -2,12 +2,16 @@ import { GetServerSideProps } from 'next';
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
-import { verifyAdminSessionToken, getAdminSessionCookieName } from '../../lib/admin-auth';
+import {
+  getAdminSessionCookieName,
+  isSpnAdminSession,
+  verifyAdminSessionToken,
+} from '../../lib/admin-auth';
 
 interface AdminSedeProps {
-  adminUsername: string;
   adminName: string;
   adminCampus: string;
+  canManageFinalFormAccess: boolean;
 }
 
 interface Validation {
@@ -49,22 +53,14 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
   return {
     props: {
-      adminUsername: session.username,
       adminName: session.name,
       adminCampus: session.campus,
+      canManageFinalFormAccess: isSpnAdminSession(session),
     },
   };
 };
 
-export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }: AdminSedeProps) {
-  const normalizedUsername = adminUsername.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const normalizedName = adminName.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const combinedIdentity = `${normalizedUsername}${normalizedName}`;
-  const isSpnAdmin =
-    normalizedUsername === 'spn' ||
-    normalizedName === 'spn' ||
-    combinedIdentity === 'adminspn' ||
-    combinedIdentity === 'spnadmin';
+export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalFormAccess }: AdminSedeProps) {
   const [validations, setValidations] = useState<Validation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newValName, setNewValName] = useState('');
@@ -98,7 +94,7 @@ export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }
 
   useEffect(() => {
     fetchData();
-    if (isSpnAdmin) {
+    if (canManageFinalFormAccess) {
       fetchFinalFormAccess();
     }
   }, []);
@@ -465,7 +461,7 @@ export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs uppercase tracking-[0.18em] text-slate-300 sm:text-sm sm:tracking-[0.28em]">
-              Admin: {adminName}
+              Admin: {adminName.toLowerCase()}
             </div>
             <button
               onClick={handleLogout}
@@ -478,7 +474,7 @@ export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }
       </nav>
 
       <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {isSpnAdmin && (
+        {canManageFinalFormAccess && (
         <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
