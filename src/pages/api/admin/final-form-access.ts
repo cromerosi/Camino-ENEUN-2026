@@ -15,12 +15,20 @@ function normalizeEmail(email: unknown): string {
   return email.trim().toLowerCase();
 }
 
+function isSpnAdmin(username: string | undefined): boolean {
+  return (username ?? '').trim().toLowerCase() === 'spn';
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const token = req.cookies[getAdminSessionCookieName()];
   const session = await verifyAdminSessionToken(token);
 
   if (!session) {
     return res.status(401).json({ error: 'No autorizado' });
+  }
+
+  if (!isSpnAdmin(session.username)) {
+    return res.status(403).json({ error: 'Solo el usuario admin spn puede gestionar este control.' });
   }
 
   if (req.method === 'GET') {

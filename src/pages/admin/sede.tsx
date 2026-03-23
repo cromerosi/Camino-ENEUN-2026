@@ -5,6 +5,7 @@ import Head from 'next/head';
 import { verifyAdminSessionToken, getAdminSessionCookieName } from '../../lib/admin-auth';
 
 interface AdminSedeProps {
+  adminUsername: string;
   adminName: string;
   adminCampus: string;
 }
@@ -48,13 +49,15 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
   return {
     props: {
+      adminUsername: session.username,
       adminName: session.name,
       adminCampus: session.campus,
     },
   };
 };
 
-export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProps) {
+export default function SedeAdminPanel({ adminUsername, adminName, adminCampus }: AdminSedeProps) {
+  const isSpnAdmin = adminUsername.trim().toLowerCase() === 'spn';
   const [validations, setValidations] = useState<Validation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newValName, setNewValName] = useState('');
@@ -88,7 +91,9 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
 
   useEffect(() => {
     fetchData();
-    fetchFinalFormAccess();
+    if (isSpnAdmin) {
+      fetchFinalFormAccess();
+    }
   }, []);
 
   const fetchData = async () => {
@@ -466,6 +471,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
       </nav>
 
       <main className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        {isSpnAdmin && (
         <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -548,6 +554,7 @@ export default function SedeAdminPanel({ adminName, adminCampus }: AdminSedeProp
             </div>
           </div>
         </section>
+        )}
 
         <section className="mb-8 rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
