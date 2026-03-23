@@ -20,6 +20,53 @@ interface FinalFormPageProps {
   initialData: Partial<ConfirmationFormData> | null;
 }
 
+function readObject(payload: unknown, key: string): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return null;
+  }
+
+  const value = (payload as Record<string, unknown>)[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function parseStoredTransport(value: unknown): '' | 'SI' | 'PROPIOS_MEDIOS' {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'SI' || normalized === 'PROPIOS_MEDIOS') {
+    return normalized;
+  }
+
+  if (normalized.includes('SUMINISTRADOS POR LA UNIVERSIDAD')) {
+    return 'SI';
+  }
+
+  if (normalized.includes('PROPIOS RECURSOS')) {
+    return 'PROPIOS_MEDIOS';
+  }
+
+  return '';
+}
+
+function parseStoredCamping(value: unknown): '' | 'YES' | 'NO' {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const normalized = value.trim().toUpperCase();
+  if (normalized === 'YES' || normalized === 'NO') {
+    return normalized;
+  }
+
+  return '';
+}
+
 function readString(payload: unknown, keys: string[], fallback = ''): string {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return fallback;
@@ -313,15 +360,6 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
       };
     }
 
-    if (registration?.has_attendee_submission) {
-      return {
-        redirect: {
-          destination: '/?finalFormStatus=already-submitted',
-          permanent: false,
-        },
-      };
-    }
-
     const firstName = registration?.first_name?.trim() ?? '';
     const lastName = registration?.last_name?.trim() ?? '';
     const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || fallbackName;
@@ -350,13 +388,105 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
       previousAllergiesDetail,
     };
 
-    const initialData = null;
+    let initialData: Partial<ConfirmationFormData> | null = null;
+
+    if (registration?.id) {
+      const attendeeRows = await sql`
+        SELECT
+          identification_number,
+          badge_name,
+          sede,
+          pronoun,
+          blood_type_id,
+          eps_id,
+          consent_health_data,
+          health_condition_codes,
+          health_details,
+          emergency_contact_name,
+          emergency_contact_relationship,
+          emergency_contact_phone,
+          lodging_choice,
+          lodging_address,
+          transport,
+          camping_confirmation,
+          payload
+        FROM attendees
+        WHERE attendee_id = ${String(registration.id)}
+        ORDER BY updated_at DESC
+        LIMIT 1
+      ` as Array<{
+        identification_number: string | null;
+        badge_name: string | null;
+        sede: string | null;
+        pronoun: string | null;
+        blood_type_id: string | null;
+        eps_id: string | null;
+        consent_health_data: boolean | null;
+        health_condition_codes: string[] | null;
+        health_details: unknown;
+        emergency_contact_name: string | null;
+        emergency_contact_relationship: string | null;
+        emergency_contact_phone: string | null;
+        lodging_choice: string | null;
+        lodging_address: string | null;
+        transport: string | null;
+        camping_confirmation: string | null;
+        payload: unknown;
+      }>;
+
+      const attendee = attendeeRows[0];
+      if (attendee) {
+        const payloadRecord =
+          attendee.payload && typeof attendee.payload === 'object' && !Array.isArray(attendee.payload)
+            ? (attendee.payload as Record<string, unknown>)
+            : null;
+
+        const healthDetails = readObject(attendee.health_details, 'condition_details');
+
+        initialData = {
+          id: attendee.identification_number?.trim() || prefill.id || '',
+          badgeName: attendee.badge_name?.trim() || '',
+          sede: attendee.sede?.trim() || prefill.sede || '',
+          pronoun: attendee.pronoun?.trim() || '',
+          pronounOther:
+            readString(payloadRecord, ['pronoun_other', 'pronounOther']) ||
+            (attendee.pronoun?.trim().toLowerCase() === 'otro' ? attendee.pronoun?.trim() || '' : ''),
+          healthConditionCodes:
+            (Array.isArray(attendee.health_condition_codes)
+              ? attendee.health_condition_codes.filter((code): code is ConfirmationFormData['healthConditionCodes'][number] => typeof code === 'string')
+              : []) || ['NONE'],
+          allergiesDetail: readString(healthDetails, ['allergies']),
+          asthmaDetail: readString(healthDetails, ['asthma']),
+          diabetesDetail: readString(healthDetails, ['diabetes']),
+          nonNeurotypicalDetail: readString(healthDetails, ['non_neurotypical']),
+          epilepsyDetail: readString(healthDetails, ['epilepsy']),
+          hypertensionDetail: readString(healthDetails, ['hypertension']),
+          cardiacConditionsDetail: readString(healthDetails, ['cardiac_conditions']),
+          reducedMobilityDetail: readString(healthDetails, ['reduced_mobility']),
+          visualDisabilityDetail: readString(healthDetails, ['visual_disability']),
+          hearingDisabilityDetail: readString(healthDetails, ['hearing_disability']),
+          permanentMedicationDetail: readString(healthDetails, ['permanent_medication']),
+          psychosocialDisabilityDetail: readString(healthDetails, ['psychosocial_disability']),
+          otherHealthConditionDetail: readString(healthDetails, ['other']),
+          bloodTypeId: attendee.blood_type_id?.trim() || '',
+          emergencyContactName: attendee.emergency_contact_name?.trim() || '',
+          emergencyContactRelationship: attendee.emergency_contact_relationship?.trim() || '',
+          emergencyContactPhone: attendee.emergency_contact_phone?.trim() || '',
+          lodgingChoice: attendee.lodging_choice?.trim() || '',
+          lodgingAddress: attendee.lodging_address?.trim() || '',
+          transport: parseStoredTransport(attendee.transport),
+          campingConfirmation: parseStoredCamping(attendee.camping_confirmation),
+          epsId: attendee.eps_id?.trim() || '',
+          consentHealthData: attendee.consent_health_data === true,
+        };
+      }
+    }
 
     return {
       props: {
         email: authUser.email,
         fullName,
-        alreadySubmitted: false,
+        alreadySubmitted: Boolean(registration?.has_attendee_submission),
         prefill,
         initialData,
       },

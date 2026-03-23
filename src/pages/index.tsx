@@ -1,4 +1,5 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import { useState } from 'react';
 import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
 import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
@@ -48,6 +49,132 @@ const STATUS_STYLES = {
 const getStatusStyle = (status: EneunNodeStatus) =>
   STATUS_STYLES[status] ?? STATUS_STYLES.gray;
 
+const HEALTH_CONDITION_LABELS: Record<string, string> = {
+  NONE: 'Ninguna',
+  PREFER_NOT_TO_ANSWER: 'Prefiere no responder',
+};
+
+const normalizeStringValue = (value: unknown): string => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  return value.trim();
+};
+
+const toYesNoText = (value: unknown): string => {
+  if (typeof value === 'boolean') {
+    return value ? 'Sí' : 'No';
+  }
+
+  const normalized = normalizeStringValue(value).toLowerCase();
+  if (['si', 'sí', 'yes', 'true'].includes(normalized)) {
+    return 'Sí';
+  }
+  if (['no', 'false'].includes(normalized)) {
+    return 'No';
+  }
+
+  return 'Sin dato';
+};
+
+const formatSimpleValue = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return 'Sin dato';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'Sí' : 'No';
+  }
+
+  if (typeof value === 'number') {
+    return String(value);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : 'Sin dato';
+  }
+
+  return 'Sin dato';
+};
+
+const formatHealthDetails = (healthDetails: unknown, attendeeData: Record<string, unknown>): string => {
+  const health =
+    healthDetails && typeof healthDetails === 'object' && !Array.isArray(healthDetails)
+      ? (healthDetails as Record<string, unknown>)
+      : {};
+
+  const eps = formatSimpleValue(health.eps_id ?? attendeeData.eps_id);
+  const bloodType = formatSimpleValue(health.blood_type_id ?? attendeeData.blood_type_id);
+  const consent = toYesNoText(health.consent_health_data ?? attendeeData.consent_health_data);
+
+  const rawCodes =
+    Array.isArray(health.health_condition_codes) && health.health_condition_codes.length > 0
+      ? health.health_condition_codes
+      : Array.isArray(attendeeData.health_condition_codes)
+        ? attendeeData.health_condition_codes
+        : [];
+
+  const codes = rawCodes
+    .map((code) => normalizeStringValue(code))
+    .filter((code) => code)
+    .map((code) => HEALTH_CONDITION_LABELS[code] ?? code.replace(/_/g, ' ').toLowerCase())
+    .join(', ');
+
+  const conditionDetails =
+    health.condition_details && typeof health.condition_details === 'object' && !Array.isArray(health.condition_details)
+      ? (health.condition_details as Record<string, unknown>)
+      : {};
+
+  const conditionDetailsText = Object.values(conditionDetails)
+    .map((detail) => formatSimpleValue(detail))
+    .filter((detail) => detail !== 'Sin dato')
+    .join(', ');
+
+  return [
+    `EPS: ${eps}`,
+    `Tipo de sangre: ${bloodType}`,
+    `Autorización de datos de salud: ${consent}`,
+    `Condiciones reportadas: ${codes || 'Ninguna'}`,
+    `Detalle adicional: ${conditionDetailsText || 'Ninguno'}`,
+  ].join('\n');
+};
+
+type AttendeeDisplayEntry = {
+  label: string;
+  value: string;
+};
+
+const buildFriendlyAttendeeEntries = (attendeeData: Record<string, unknown> | null): AttendeeDisplayEntry[] => {
+  if (!attendeeData) {
+    return [];
+  }
+
+  const entries: AttendeeDisplayEntry[] = [];
+  const maybePush = (label: string, value: unknown) => {
+    const formatted = formatSimpleValue(value);
+    if (formatted !== 'Sin dato') {
+      entries.push({ label, value: formatted });
+    }
+  };
+
+  maybePush('Nombre en escarapela', attendeeData.badge_name);
+  maybePush('Pronombre', attendeeData.pronoun);
+  entries.push({
+    label: 'Detalle de salud',
+    value: formatHealthDetails(attendeeData.health_details, attendeeData),
+  });
+  maybePush('Nombre de contacto de emergencia', attendeeData.emergency_contact_name);
+  maybePush('Parentesco del contacto de emergencia', attendeeData.emergency_contact_relationship);
+  maybePush('Teléfono del contacto de emergencia', attendeeData.emergency_contact_phone);
+  maybePush('Elección de hospedaje', attendeeData.lodging_choice);
+  maybePush('Dirección de hospedaje', attendeeData.lodging_address);
+  maybePush('Confirmación de acampada', attendeeData.camping_confirmation);
+  maybePush('Transporte', attendeeData.transport);
+
+  return entries;
+};
+
 interface DashboardPageProps {
   authEmail: string;
   participant: ParticipantViewModel;
@@ -59,6 +186,7 @@ interface DashboardPageProps {
   finalFormUrl: string | null;
   showFinalFormSubmittedAlert: boolean;
   showPreconfirmationRequiredAlert: boolean;
+  attendeeData: Record<string, unknown> | null;
 }
 
 export default function DashboardPage({
@@ -72,7 +200,11 @@ export default function DashboardPage({
   finalFormUrl,
   showFinalFormSubmittedAlert,
   showPreconfirmationRequiredAlert,
+  attendeeData,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
+  const attendeeEntries = buildFriendlyAttendeeEntries(attendeeData);
+
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
     { name: 'Completado', color: 'green', description: 'Revisión aprobada.' },
@@ -152,7 +284,14 @@ export default function DashboardPage({
                   <dd className="mt-2 text-lg font-semibold text-white">{participant.committee}</dd>
                 </div>
               </dl>
-              <div className="mt-8">
+              <div className="mt-8 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowAttendeeDetails((current) => !current)}
+                  className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200 transition hover:border-emerald-200/60 hover:bg-emerald-500/20"
+                >
+                  {showAttendeeDetails ? 'Mostrar menos' : 'Mostrar más'}
+                </button>
                 <a
                   href="/api/auth/logout"
                   className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
@@ -160,6 +299,25 @@ export default function DashboardPage({
                   Cerrar sesión
                 </a>
               </div>
+              {showAttendeeDetails && (
+                <div className="mt-6 rounded-2xl border border-white/10 bg-slate-900/45 p-4 sm:p-5">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Datos adicionales del formulario final</p>
+                  {attendeeEntries.length > 0 ? (
+                    <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                      {attendeeEntries.map((entry) => (
+                        <div key={entry.label}>
+                          <dt className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{entry.label}</dt>
+                          <dd className="mt-2 whitespace-pre-wrap break-words text-sm font-medium text-white">
+                            {entry.value}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <p className="mt-4 text-sm text-slate-300">No se encontraron datos del formulario final en la tabla attendees.</p>
+                  )}
+                </div>
+              )}
               <p className="mt-auto break-all pt-8 text-center text-[11px] tracking-[0.10em] text-slate-500">
                 UUID: <span className="font-mono lowercase text-slate-400">{participant.uuid}</span>
               </p>
@@ -297,6 +455,28 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
 
   const participant = await getParticipantByEmail(targetEmail);
   const journeySteps = await getJourneyStepsByEmail(targetEmail);
+  let attendeeData: Record<string, unknown> | null = null;
+
+  try {
+    const sql = getSql();
+    const attendeeRows = (await sql`
+      SELECT payload
+      FROM attendees
+      WHERE
+        lower(trim(coalesce(email, ''))) = lower(trim(${targetEmail}))
+        OR uuid::text = ${participant.uuid || ''}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `) as Array<{ payload: unknown }>;
+
+    const rawPayload = attendeeRows[0]?.payload;
+    if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
+      attendeeData = rawPayload as Record<string, unknown>;
+    }
+  } catch {
+    attendeeData = null;
+  }
+
   const finalFormBaseUrl =
     process.env.FINAL_FORM_URL?.trim() || process.env.NEXT_PUBLIC_FINAL_FORM_URL?.trim() || '';
   const internalFinalFormUrl = '/formulario-final';
@@ -331,6 +511,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       finalFormUrl,
       showFinalFormSubmittedAlert: finalFormStatus === 'already-submitted',
       showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
+      attendeeData,
     },
   };
 };
