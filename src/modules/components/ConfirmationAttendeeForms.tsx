@@ -133,10 +133,10 @@ export function ConfirmationAttendeeForm({
     }
 
     const nameParts = trimmedBadgeName.split(/\s+/).filter(Boolean);
-    const hasTwoOrMoreNames = nameParts.length >= 2;
+    const hasThreeOrMoreNames = nameParts.length >= 3;
     const hasTooManyCharacters = trimmedBadgeName.length > BADGE_NAME_RECOMMENDED_MAX_LENGTH;
 
-    if (!hasTwoOrMoreNames && !hasTooManyCharacters) {
+    if (!hasThreeOrMoreNames && !hasTooManyCharacters) {
       return '';
     }
 

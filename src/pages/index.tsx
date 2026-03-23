@@ -347,7 +347,34 @@ export default function DashboardPage({
               <div className="relative mt-10">
                 <ol className="relative grid grid-cols-1 gap-6 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-between">
                   {journeySteps.map((step, index) => {
-                    const style = getStatusStyle(step.status);
+                    const isTrainingStep = step.label === 'Capacitaciones de la plataforma';
+                    const style = isTrainingStep ? STATUS_STYLES.purple : getStatusStyle(step.status);
+
+                    if (isTrainingStep) {
+                      return (
+                        <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
+                          <a
+                            href="https://eneun-classroom-hernan.vercel.app/login"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="group flex min-w-0 flex-col items-center text-center"
+                          >
+                            <div
+                              className={`flex h-16 w-16 items-center justify-center rounded-full text-sm font-semibold uppercase tracking-[0.2em] ${style.node} transition duration-200 group-hover:scale-105 group-hover:brightness-110`}
+                            >
+                              {index + 1}
+                            </div>
+                            <p className={`mt-4 break-words text-xs font-semibold tracking-[0.2em] ${style.label} underline decoration-fuchsia-300/50 underline-offset-4`}>
+                              {STEP_LABELS[step.label] ?? step.label}
+                            </p>
+                            <p className={`mt-1 text-sm underline decoration-fuchsia-300/50 underline-offset-4 ${style.detail}`}>
+                              Ya está en curso. Haz clic aquí para ingresar.
+                            </p>
+                          </a>
+                        </li>
+                      );
+                    }
+
                     return (
                       <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
                         <div
