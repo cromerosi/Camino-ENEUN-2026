@@ -354,7 +354,7 @@ export default function DashboardPage({
                       return (
                         <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
                           <a
-                            href="https://eneun-classroom-hernan.vercel.app/login"
+                            href="https://capacitacioneseneun.vercel.app/login"
                             target="_blank"
                             rel="noreferrer"
                             className="group flex min-w-0 flex-col items-center text-center"
