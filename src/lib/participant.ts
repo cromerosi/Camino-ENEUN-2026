@@ -1,6 +1,7 @@
 import { getSql } from './db';
 import { getTrainingSql } from './training-db';
 import { ENEUN_PROCESS_NODES, type EneunJourneyStepState } from './eneun-schema';
+import { getDatePartsInAppTimeZone } from './timezone';
 
 export interface ParticipantViewModel {
   fullName: string;
@@ -166,14 +167,12 @@ function toJourneyDate(value: string | Date | null | undefined): string | null {
     return null;
   }
 
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) {
+  const dateParts = getDatePartsInAppTimeZone(value);
+  if (!dateParts) {
     return null;
   }
 
-  const day = `${date.getDate()}`.padStart(2, '0');
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  return `${day}·${month}`;
+  return `${dateParts.day}·${dateParts.month}`;
 }
 
 function parseCountValue(value: unknown): number {
