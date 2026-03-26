@@ -362,7 +362,9 @@ export const getServerSideProps: GetServerSideProps<FinalFormPageProps> = async 
     }>;
 
     const registration = rows[0];
-    if (!registration?.has_confirmation_submission) {
+    const shouldBypassPreconfirmation = access.isAllowedWhenClosed;
+
+    if (!registration?.has_confirmation_submission && !shouldBypassPreconfirmation) {
       return {
         redirect: {
           destination: '/?finalFormStatus=preconfirmation-required',

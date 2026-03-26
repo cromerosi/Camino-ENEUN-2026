@@ -324,7 +324,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(404).json({ error: 'No encontramos un registro para este correo' });
     }
 
-    if (!registration.has_confirmation_submission) {
+    const shouldBypassPreconfirmation = access.isAllowedWhenClosed;
+
+    if (!registration.has_confirmation_submission && !shouldBypassPreconfirmation) {
       return res.status(403).json({
         error: 'Debes realizar la preconfirmación antes de enviar el formulario final.',
       });
