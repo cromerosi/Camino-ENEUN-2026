@@ -47,6 +47,19 @@ interface TrainingStatus {
   updated_at: string | Date | null;
 }
 
+export interface AttendanceDaySummary {
+  date: string;
+  completed: number;
+  total: number;
+}
+
+export interface AttendanceSummary {
+  totalCompleted: number;
+  totalExpected: number;
+  days: AttendanceDaySummary[];
+  updatedAt: string;
+}
+
 export interface LocalAuthUser {
   sub: string;
   email: string;
@@ -184,6 +197,56 @@ function parseCountValue(value: unknown): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function normalizeForSearch(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+const ATTENDANCE_DAY_RULES: Array<{ date: string; patterns: RegExp[] }> = [
+  {
+    date: '2026-03-27',
+    patterns: [
+      /\b27\b/, 
+      /27\s*[-/.]?\s*03/,
+      /27\s*de\s*marzo/,
+      /dia\s*1/,
+      /viernes/,
+    ],
+  },
+  {
+    date: '2026-03-28',
+    patterns: [
+      /\b28\b/, 
+      /28\s*[-/.]?\s*03/,
+      /28\s*de\s*marzo/,
+      /dia\s*2/,
+      /sabado/,
+    ],
+  },
+  {
+    date: '2026-03-29',
+    patterns: [
+      /\b29\b/, 
+      /29\s*[-/.]?\s*03/,
+      /29\s*de\s*marzo/,
+      /dia\s*3/,
+      /domingo/,
+    ],
+  },
+];
+
+function getAttendanceDayByValidationName(validationName: string): string | null {
+  const normalizedName = normalizeForSearch(validationName);
+  const foundRule = ATTENDANCE_DAY_RULES.find((rule) =>
+    rule.patterns.some((pattern) => pattern.test(normalizedName)),
+  );
+
+  return foundRule?.date ?? null;
 }
 
 async function getSedeValidationProgress(
@@ -486,6 +549,109 @@ export async function getJourneyStepsByEmail(email: string): Promise<EneunJourne
       status: 'gray',
       detail: 'Sin iniciar',
     }));
+  }
+}
+
+export async function getAttendanceSummaryByEmail(email: string): Promise<AttendanceSummary> {
+  const baseDays: AttendanceDaySummary[] = ATTENDANCE_DAY_RULES.map((rule) => ({
+    date: rule.date,
+    completed: 0,
+    total: 0,
+  }));
+
+  const emptySummary: AttendanceSummary = {
+    totalCompleted: 0,
+    totalExpected: 0,
+    days: baseDays,
+    updatedAt: new Date().toISOString(),
+  };
+
+  try {
+    const sql = getSql();
+
+    const registrationRows = (await sql`
+      SELECT id
+      FROM registrations
+      WHERE lower(trim(email)) = lower(trim(${email}))
+      ORDER BY registered_at DESC
+      LIMIT 1
+    `) as Array<{ id: number | null }>;
+
+    const registrationId = registrationRows[0]?.id;
+    if (!registrationId) {
+      return emptySummary;
+    }
+
+    const campusRows = (await sql`
+      SELECT cs.campus, r.university
+      FROM registrations r
+      LEFT JOIN confirmation_submissions cs
+        ON cs.registration_id = r.id
+      WHERE r.id = ${registrationId}
+      ORDER BY cs.submitted_at DESC NULLS LAST
+      LIMIT 1
+    `) as Array<{ campus: string | null; university: string | null }>;
+
+    const campus = campusRows[0]?.campus?.trim() || campusRows[0]?.university?.trim() || '';
+
+    if (!campus) {
+      return emptySummary;
+    }
+
+    const attendanceRows = (await sql`
+      SELECT
+        sv.name,
+        coalesce(ssv.is_completed, false) as is_completed
+      FROM sede_validations sv
+      LEFT JOIN student_sede_validations ssv
+        ON ssv.validation_id = sv.id
+        AND ssv.registration_id = ${registrationId}
+      WHERE translate(lower(trim(sv.campus)), 'áéíóú', 'aeiou') = translate(lower(trim(${campus})), 'áéíóú', 'aeiou')
+    `) as Array<{ name: string | null; is_completed: boolean | null }>;
+
+    const dayMap = new Map<string, AttendanceDaySummary>(
+      baseDays.map((day) => [day.date, { ...day }]),
+    );
+
+    for (const row of attendanceRows) {
+      const rawName = row.name?.trim();
+      if (!rawName) {
+        continue;
+      }
+
+      const dayDate = getAttendanceDayByValidationName(rawName);
+      if (!dayDate) {
+        continue;
+      }
+
+      const targetDay = dayMap.get(dayDate);
+      if (!targetDay) {
+        continue;
+      }
+
+      targetDay.total += 1;
+      if (row.is_completed) {
+        targetDay.completed += 1;
+      }
+    }
+
+    const days = ATTENDANCE_DAY_RULES.map((rule) => dayMap.get(rule.date) ?? {
+      date: rule.date,
+      completed: 0,
+      total: 0,
+    });
+
+    const totalCompleted = days.reduce((acc, day) => acc + day.completed, 0);
+    const totalExpected = days.reduce((acc, day) => acc + day.total, 0);
+
+    return {
+      totalCompleted,
+      totalExpected,
+      days,
+      updatedAt: new Date().toISOString(),
+    };
+  } catch {
+    return emptySummary;
   }
 }
 
