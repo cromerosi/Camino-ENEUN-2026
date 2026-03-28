@@ -7,10 +7,59 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import { getSql } from '../lib/db';
 import {
+  getAttendanceMatrixByEmail,
   getJourneyStepsByEmail,
   getParticipantByEmail,
+  type AttendanceMatrix,
+  type AttendanceSlotStatus,
+  type AttendanceVisualStatus,
   type ParticipantViewModel,
 } from '../lib/participant';
+
+const ATTENDANCE_DAY_LABELS = {
+  viernes: 'Viernes',
+  sabado: 'Sábado',
+  domingo: 'Domingo',
+} as const;
+
+const ATTENDANCE_STATUS_STYLE: Record<AttendanceVisualStatus, string> = {
+  present: 'border-emerald-300/60 bg-emerald-500 text-white',
+  absent: 'border-rose-300/60 bg-rose-500 text-white',
+  late: 'border-amber-300/60 bg-amber-500 text-white',
+  unavailable: 'border-slate-500/70 bg-slate-700/60 text-slate-200',
+};
+
+const ATTENDANCE_ICON_BY_STATUS: Record<AttendanceVisualStatus, string> = {
+  present: '✓',
+  absent: '×',
+  late: '⏳',
+  unavailable: '',
+};
+
+const getAttendanceTooltip = (slot: AttendanceSlotStatus): string => {
+  const dayLabel = ATTENDANCE_DAY_LABELS[slot.day];
+  const shiftLabel = slot.shift === 'manana' ? 'Mañana' : 'Tarde';
+  const typeLabel = slot.type === 'entrada' ? 'Entrada' : 'Salida';
+  const base = `${dayLabel} · ${shiftLabel} · ${typeLabel}`;
+
+  if (slot.hourLabel) {
+    return `${base} · Registrado a las ${slot.hourLabel}`;
+  }
+
+  if (slot.status === 'unavailable') {
+    return `${base} · Aún no disponible`;
+  }
+
+  if (slot.status === 'late') {
+    return `${base} · Llegada tardía`;
+  }
+
+  if (slot.status === 'absent') {
+    return `${base} · Sin registro de asistencia`;
+  }
+
+  return base;
+};
 
 const STEP_LABELS: Record<string, string> = {
   Preinscripcion: 'Preinscripción',
@@ -189,6 +238,7 @@ interface DashboardPageProps {
   showPreconfirmationRequiredAlert: boolean;
   showFinalFormClosedAlert: boolean;
   attendeeData: Record<string, unknown> | null;
+  attendanceMatrix: AttendanceMatrix;
 }
 
 export default function DashboardPage({
@@ -204,6 +254,7 @@ export default function DashboardPage({
   showPreconfirmationRequiredAlert,
   showFinalFormClosedAlert,
   attendeeData,
+  attendanceMatrix,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const { data: journeyData } = useQuery({
     queryKey: ['journeyStatus', authEmail],
@@ -226,6 +277,29 @@ export default function DashboardPage({
 
   const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
   const attendeeEntries = buildFriendlyAttendeeEntries(attendeeData);
+
+  const { data: attendanceData } = useQuery({
+    queryKey: ['attendanceStatus', authEmail],
+    queryFn: async () => {
+      const res = await fetch('/api/attendance-status');
+      if (!res.ok) {
+        throw new Error('Error al obtener asistencias');
+      }
+      return res.json() as Promise<{ attendance: AttendanceMatrix }>;
+    },
+    initialData: { attendance: attendanceMatrix },
+    refetchInterval: 5000,
+    enabled: !isAdminPreview,
+  });
+
+  const currentAttendance = attendanceData?.attendance ?? attendanceMatrix;
+  const attendanceRows: Array<'viernes' | 'sabado' | 'domingo'> = ['viernes', 'sabado', 'domingo'];
+
+  const getAttendanceSlot = (
+    day: 'viernes' | 'sabado' | 'domingo',
+    shift: 'manana' | 'tarde',
+    type: 'entrada' | 'salida',
+  ) => currentAttendance.slots.find((slot) => slot.day === day && slot.shift === shift && slot.type === type);
 
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -272,84 +346,155 @@ export default function DashboardPage({
               </div>
             )}
           </header>
-          <section className="grid gap-8 lg:grid-cols-[1.2fr_0.9fr]">
-            <article className="flex h-full min-w-0 flex-col rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
-              <div className="flex flex-wrap items-start justify-between gap-6">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.5em] text-slate-400">Participante</p>
-                  <h2 className="mt-3 text-3xl font-semibold text-white">{participant.fullName}</h2>
+          <section className="grid gap-8 lg:grid-cols-[1fr_1.15fr]">
+            <div className="flex flex-col gap-8">
+              <article className="rounded-2xl border border-white/10 bg-white/5 p-3 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:rounded-3xl sm:p-5 lg:p-8">
+                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                  <div></div>
+                  <h2 className="text-center text-xl font-semibold text-white sm:text-2xl lg:text-3xl">Asistencias Totales</h2>
+                  <p className="justify-self-end rounded-full border border-emerald-300/40 bg-emerald-500/15 px-3 py-1 text-sm font-semibold text-emerald-200 sm:px-4 sm:text-base lg:text-lg">
+                    {currentAttendance.completedSlots}/{currentAttendance.totalSlots}
+                  </p>
                 </div>
-                <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-emerald-200 sm:text-xs sm:tracking-[0.4em]">
-                  <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
-                    <circle cx="5" cy="5" r="5" />
-                  </svg>
-                  <span className="break-all">{authEmail}</span>
-                </span>
+
+                <div className="mt-6 overflow-x-auto">
+                  <div className="sm:min-w-[720px] rounded-2xl border border-white/10 bg-slate-900/45 p-3 sm:p-5">
+                <div className="grid grid-cols-[80px_repeat(4,minmax(0,1fr))] items-end gap-2 text-center sm:grid-cols-[150px_repeat(4,minmax(0,1fr))] sm:gap-3">
+                  <p className="row-span-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-300 sm:text-sm sm:tracking-[0.16em]">Día</p>
+                  <p className="col-span-4 text-xs font-semibold uppercase tracking-[0.08em] text-slate-200 sm:text-lg sm:tracking-[0.16em]">Jornada</p>
+                  <p className="col-span-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-300 sm:text-sm sm:tracking-[0.16em]">Mañana</p>
+                  <p className="col-span-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-300 sm:text-sm sm:tracking-[0.16em]">Tarde</p>
+                  <div></div>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400 sm:text-xs sm:tracking-[0.14em]">Entrada</p>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400 sm:text-xs sm:tracking-[0.14em]">Salida</p>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400 sm:text-xs sm:tracking-[0.14em]">Entrada</p>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-400 sm:text-xs sm:tracking-[0.14em]">Salida</p>
+                </div>
+
+                <div className="mt-4 space-y-2 sm:mt-4 sm:space-y-3">
+                  {attendanceRows.map((day) => {
+                    const slotSequence = [
+                      getAttendanceSlot(day, 'manana', 'entrada'),
+                      getAttendanceSlot(day, 'manana', 'salida'),
+                      getAttendanceSlot(day, 'tarde', 'entrada'),
+                      getAttendanceSlot(day, 'tarde', 'salida'),
+                    ].filter(Boolean) as AttendanceSlotStatus[];
+
+                    return (
+                      <div className="grid grid-cols-[80px_repeat(4,minmax(0,1fr))] items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-2 py-2 sm:grid-cols-[150px_repeat(4,minmax(0,1fr))] sm:gap-3 sm:px-4 sm:py-3" key={day}>
+                        <p className="text-center text-xs font-semibold uppercase tracking-[0.08em] text-white sm:text-sm sm:tracking-[0.12em]">{ATTENDANCE_DAY_LABELS[day]}</p>
+                        {slotSequence.map((slot) => (
+                          <div className="flex items-center justify-center" key={`${slot.day}-${slot.shift}-${slot.type}`}>
+                            <span
+                              title={getAttendanceTooltip(slot)}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border-2 text-base font-bold transition duration-200 hover:scale-105 sm:h-10 sm:w-10 sm:text-lg ${ATTENDANCE_STATUS_STYLE[slot.status]}`}
+                            >
+                              {ATTENDANCE_ICON_BY_STATUS[slot.status]}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px] text-slate-300 sm:gap-3 sm:text-xs">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 sm:px-3">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 sm:h-3 sm:w-3"></span> <span className="hidden sm:inline">Registrada</span><span className="sm:hidden">Reg.</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 sm:px-3">
+                    <span className="h-2 w-2 rounded-full bg-rose-500 sm:h-3 sm:w-3"></span> <span className="hidden sm:inline">Sin registro</span><span className="sm:hidden">Sin reg.</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 sm:px-3">
+                    <span className="h-2 w-2 rounded-full bg-amber-500 sm:h-3 sm:w-3"></span> <span className="hidden sm:inline">Asistencia tardía</span><span className="sm:hidden">Tard.</span>
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 sm:px-3">
+                    <span className="h-2 w-2 rounded-full bg-slate-500 sm:h-3 sm:w-3"></span> <span className="hidden sm:inline">No disponible</span><span className="sm:hidden">N/D</span>
+                  </span>
+                </div>
+
               </div>
-              <dl className="mt-10 grid gap-6 sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Tipo de documento</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{participant.documentType}</dd>
+            </div>
+              </article>
+
+              <article className="flex flex-col rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
+                <div className="flex flex-wrap items-start justify-between gap-6">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.5em] text-slate-400">Participante</p>
+                    <h2 className="mt-3 text-3xl font-semibold text-white">{participant.fullName}</h2>
+                  </div>
+                  <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/10 bg-slate-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-emerald-200 sm:text-xs sm:tracking-[0.4em]">
+                    <svg className="h-2.5 w-2.5" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+                      <circle cx="5" cy="5" r="5" />
+                    </svg>
+                    <span className="break-all">{authEmail}</span>
+                  </span>
                 </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Número de documento</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{participant.documentNumber}</dd>
+                <dl className="mt-6 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Tipo de documento</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{participant.documentType}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Número de documento</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{participant.documentNumber}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Sede</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{participant.site}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Facultad</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{participant.faculty}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampada</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{campingCopy}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Comité donde apoya</dt>
+                    <dd className="mt-2 text-sm font-semibold text-white">{participant.committee}</dd>
+                  </div>
+                </dl>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowAttendeeDetails((current) => !current)}
+                    className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200 transition hover:border-emerald-200/60 hover:bg-emerald-500/20"
+                  >
+                    {showAttendeeDetails ? 'Mostrar menos' : 'Mostrar más'}
+                  </button>
+                  <a
+                    href="/api/auth/logout"
+                    className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
+                  >
+                    Cerrar sesión
+                  </a>
                 </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Sede</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{participant.site}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Facultad</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{participant.faculty}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Acampada</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{campingCopy}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.3em] text-slate-400">Comité donde apoya</dt>
-                  <dd className="mt-2 text-lg font-semibold text-white">{participant.committee}</dd>
-                </div>
-              </dl>
-              <div className="mt-8 flex items-center justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAttendeeDetails((current) => !current)}
-                  className="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200 transition hover:border-emerald-200/60 hover:bg-emerald-500/20"
-                >
-                  {showAttendeeDetails ? 'Mostrar menos' : 'Mostrar más'}
-                </button>
-                <a
-                  href="/api/auth/logout"
-                  className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
-                >
-                  Cerrar sesión
-                </a>
-              </div>
-              {showAttendeeDetails && (
-                <div className="mt-6 rounded-2xl border border-white/10 bg-slate-900/45 p-4 sm:p-5">
-                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Datos adicionales del formulario final</p>
-                  {attendeeEntries.length > 0 ? (
-                    <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-                      {attendeeEntries.map((entry) => (
-                        <div key={entry.label}>
-                          <dt className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{entry.label}</dt>
-                          <dd className="mt-2 whitespace-pre-wrap break-words text-sm font-medium text-white">
-                            {entry.value}
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <p className="mt-4 text-sm text-slate-300">No se encontraron datos del formulario final en la tabla attendees.</p>
-                  )}
-                </div>
-              )}
-              <p className="mt-auto break-all pt-8 text-center text-[11px] tracking-[0.10em] text-slate-500">
-                UUID: <span className="font-mono lowercase text-slate-400">{participant.uuid}</span>
-              </p>
-            </article>
+                {showAttendeeDetails && (
+                  <div className="mt-4 rounded-2xl border border-white/10 bg-slate-900/45 p-4 sm:p-5">
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Datos adicionales del formulario final</p>
+                    {attendeeEntries.length > 0 ? (
+                      <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+                        {attendeeEntries.map((entry) => (
+                          <div key={entry.label}>
+                            <dt className="text-[11px] uppercase tracking-[0.18em] text-slate-400">{entry.label}</dt>
+                            <dd className="mt-2 whitespace-pre-wrap break-words text-sm font-medium text-white">
+                              {entry.value}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-300">No se encontraron datos del formulario final en la tabla attendees.</p>
+                    )}
+                  </div>
+                )}
+                <p className="mt-auto break-all pt-4 text-center text-[11px] tracking-[0.10em] text-slate-500">
+                  UUID: <span className="font-mono lowercase text-slate-400">{participant.uuid}</span>
+                </p>
+              </article>
+            </div>
             <article className="min-w-0 rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-[0_25px_80px_-35px_rgba(0,0,0,0.8)] backdrop-blur-2xl sm:p-8">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -510,6 +655,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
 
   const participant = await getParticipantByEmail(targetEmail);
   const journeySteps = await getJourneyStepsByEmail(targetEmail);
+  const attendanceMatrix = await getAttendanceMatrixByEmail(targetEmail);
   let attendeeData: Record<string, unknown> | null = null;
 
   try {
@@ -568,6 +714,7 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
       showFinalFormClosedAlert: finalFormStatus === 'closed',
       attendeeData,
+      attendanceMatrix,
     },
   };
 };
