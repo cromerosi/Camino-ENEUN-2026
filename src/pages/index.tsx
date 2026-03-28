@@ -7,18 +7,10 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import { getSql } from '../lib/db';
 import {
-  getAttendanceSummaryByEmail,
   getJourneyStepsByEmail,
   getParticipantByEmail,
-  type AttendanceSummary,
   type ParticipantViewModel,
 } from '../lib/participant';
-
-const ATTENDANCE_DAY_LABELS: Record<string, string> = {
-  '2026-03-27': '27 de marzo',
-  '2026-03-28': '28 de marzo',
-  '2026-03-29': '29 de marzo',
-};
 
 const STEP_LABELS: Record<string, string> = {
   Preinscripcion: 'Preinscripción',
@@ -197,7 +189,6 @@ interface DashboardPageProps {
   showPreconfirmationRequiredAlert: boolean;
   showFinalFormClosedAlert: boolean;
   attendeeData: Record<string, unknown> | null;
-  attendanceSummary: AttendanceSummary;
 }
 
 export default function DashboardPage({
@@ -213,7 +204,6 @@ export default function DashboardPage({
   showPreconfirmationRequiredAlert,
   showFinalFormClosedAlert,
   attendeeData,
-  attendanceSummary,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const { data: journeyData } = useQuery({
     queryKey: ['journeyStatus', authEmail],
@@ -236,22 +226,6 @@ export default function DashboardPage({
 
   const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
   const attendeeEntries = buildFriendlyAttendeeEntries(attendeeData);
-
-  const { data: attendanceData } = useQuery({
-    queryKey: ['attendanceStatus', authEmail],
-    queryFn: async () => {
-      const res = await fetch('/api/attendance-status');
-      if (!res.ok) {
-        throw new Error('Error al obtener asistencias');
-      }
-      return res.json() as Promise<{ attendance: AttendanceSummary }>;
-    },
-    initialData: { attendance: attendanceSummary },
-    refetchInterval: 5000,
-    enabled: !isAdminPreview,
-  });
-
-  const currentAttendance = attendanceData?.attendance ?? attendanceSummary;
 
   const legend = [
     { name: 'Sin iniciar', color: 'gray', description: 'Etapa aún bloqueada.' },
@@ -452,37 +426,6 @@ export default function DashboardPage({
                 })}
               </div>
               <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Asistencias ENEUN</p>
-                  <span className="inline-flex rounded-full border border-emerald-300/35 bg-emerald-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-emerald-200">
-                    Total: {currentAttendance.totalCompleted}/{currentAttendance.totalExpected}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-slate-400">Actualización automática cada 5 segundos.</p>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  {currentAttendance.days.map((day) => {
-                    const percentage = day.total > 0 ? Math.round((day.completed / day.total) * 100) : 0;
-                    return (
-                      <div key={day.date} className="rounded-xl border border-white/10 bg-slate-900/55 px-4 py-4">
-                        <p className="text-xs uppercase tracking-[0.16em] text-slate-400">
-                          {ATTENDANCE_DAY_LABELS[day.date] ?? day.date}
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-white">
-                          {day.completed}
-                          <span className="ml-1 text-sm font-medium text-slate-400">/ {day.total}</span>
-                        </p>
-                        <div className="mt-3 h-2 rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-fuchsia-400 to-rose-400"
-                            style={{ width: `${percentage}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Paso final</p>
                 {finalFormUrl ? (
                   <a
@@ -567,7 +510,6 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
 
   const participant = await getParticipantByEmail(targetEmail);
   const journeySteps = await getJourneyStepsByEmail(targetEmail);
-  const attendanceSummary = await getAttendanceSummaryByEmail(targetEmail);
   let attendeeData: Record<string, unknown> | null = null;
 
   try {
@@ -626,7 +568,6 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
       showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
       showFinalFormClosedAlert: finalFormStatus === 'closed',
       attendeeData,
-      attendanceSummary,
     },
   };
 };
