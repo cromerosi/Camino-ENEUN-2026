@@ -15,25 +15,38 @@ export type ConfirmationHealthConditionCode =
   | 'PSYCHOSOCIAL_DISABILITY'
   | 'OTHER';
 
+export type ConfirmationHealthDetailField =
+  | 'allergiesDetail'
+  | 'asthmaDetail'
+  | 'diabetesDetail'
+  | 'nonNeurotypicalDetail'
+  | 'epilepsyDetail'
+  | 'hypertensionDetail'
+  | 'cardiacConditionsDetail'
+  | 'reducedMobilityDetail'
+  | 'visualDisabilityDetail'
+  | 'hearingDisabilityDetail'
+  | 'permanentMedicationDetail'
+  | 'psychosocialDisabilityDetail'
+  | 'otherHealthConditionDetail';
+
 export type ConfirmationHealthOption = {
   code: ConfirmationHealthConditionCode;
   label: string;
   requiresDetail?: boolean;
-  detailField?:
-    | 'allergiesDetail'
-    | 'asthmaDetail'
-    | 'diabetesDetail'
-    | 'nonNeurotypicalDetail'
-    | 'epilepsyDetail'
-    | 'hypertensionDetail'
-    | 'cardiacConditionsDetail'
-    | 'reducedMobilityDetail'
-    | 'visualDisabilityDetail'
-    | 'hearingDisabilityDetail'
-    | 'permanentMedicationDetail'
-    | 'psychosocialDisabilityDetail'
-    | 'otherHealthConditionDetail';
+  detailField?: ConfirmationHealthDetailField;
   exclusive?: boolean;
+};
+
+/** Pregunta de detalle que aparece al seleccionar una condición de salud. */
+export type ConfirmationHealthDetailQuestion = {
+  code: ConfirmationHealthConditionCode;
+  field: ConfirmationHealthDetailField;
+  /** Clave con la que se guarda en attendees.health_details.condition_details. */
+  storageKey: string;
+  label: string;
+  placeholder: string;
+  errorMessage: string;
 };
 
 export type ConfirmationBloodType = {
@@ -72,34 +85,24 @@ export type ConfirmationPrefillData = {
   previousAllergiesDetail?: string;
 };
 
-export type ConfirmationFormData = {
+export type ConfirmationTransport = '' | 'SI' | 'PROPIOS_MEDIOS';
+export type ConfirmationCampingConfirmation = '' | 'YES' | 'NO';
+
+export type ConfirmationFormData = Record<ConfirmationHealthDetailField, string> & {
   id: string;
   badgeName: string;
   sede: string;
   pronoun: string;
   pronounOther: string;
   healthConditionCodes: ConfirmationHealthConditionCode[];
-  allergiesDetail: string;
-  asthmaDetail: string;
-  diabetesDetail: string;
-  nonNeurotypicalDetail: string;
-  epilepsyDetail: string;
-  hypertensionDetail: string;
-  cardiacConditionsDetail: string;
-  reducedMobilityDetail: string;
-  visualDisabilityDetail: string;
-  hearingDisabilityDetail: string;
-  permanentMedicationDetail: string;
-  psychosocialDisabilityDetail: string;
-  otherHealthConditionDetail: string;
   bloodTypeId: string;
   emergencyContactName: string;
   emergencyContactRelationship: string;
   emergencyContactPhone: string;
   lodgingChoice: string;
   lodgingAddress: string;
-  transport: '' | 'SI' | 'PROPIOS_MEDIOS';
-  campingConfirmation: '' | 'YES' | 'NO';
+  transport: ConfirmationTransport;
+  campingConfirmation: ConfirmationCampingConfirmation;
   epsId: string;
   consentHealthData: boolean;
 };

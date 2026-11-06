@@ -19,6 +19,9 @@ export interface ForeignKeyDefinition {
   referencesColumn: string;
 }
 
+/**
+ * Referencia del esquema de la base de datos ENEUN (documentación; no se usa en tiempo de ejecución).
+ */
 export const ENEUN_TABLE_COLUMNS: TableColumnDefinition[] = [
   { table: 'base_equipo_organizacion', column: 'email', type: 'text' },
   { table: 'base_equipo_organizacion', column: 'comite', type: 'text' },
@@ -178,7 +181,7 @@ export const ENEUN_TABLE_COLUMNS: TableColumnDefinition[] = [
   { table: 'registrations', column: 'final_submitted_at', type: 'timestamp with time zone' },
   { table: 'registrations', column: 'is_late', type: 'boolean' },
   { table: 'registrations', column: 'late_marked_at', type: 'timestamp with time zone' },
-] as const;
+];
 
 export const ENEUN_FOREIGN_KEYS: ForeignKeyDefinition[] = [
   { table: 'session', column: 'userId', referencesTable: 'user', referencesColumn: 'id' },
@@ -199,7 +202,7 @@ export const ENEUN_FOREIGN_KEYS: ForeignKeyDefinition[] = [
   { table: 'confirmation_caribe', column: 'registration_id', referencesTable: 'registrations', referencesColumn: 'id' },
   { table: 'confirmation_submissions', column: 'registration_id', referencesTable: 'registrations', referencesColumn: 'id' },
   { table: 'confirmation_answers', column: 'submission_id', referencesTable: 'confirmation_submissions', referencesColumn: 'id' },
-] as const;
+];
 
 export const ENEUN_CAMPUS_CONFIRMATION_TABLES = {
   bogota: 'confirmation_bogota',
@@ -232,27 +235,3 @@ export interface EneunJourneyStepState {
   status: EneunNodeStatus;
   detail: string;
 }
-
-const ENEUN_DEFAULT_STEP_STATUS_BY_NODE: Record<EneunProcessNode, EneunNodeStatus> = {
-  Preinscripcion: 'green',
-  Preconfirmacion: 'green',
-  'Validacion de sede de origen': 'purple',
-  'Capacitaciones de la plataforma': 'red',
-  'Formulario final': 'gray',
-};
-
-const ENEUN_DEFAULT_STEP_DETAIL_BY_NODE: Record<EneunProcessNode, string> = {
-  Preinscripcion: 'Completado el 04·03',
-  Preconfirmacion: 'Confirmado el 08·03',
-  'Validacion de sede de origen': 'En verificacion',
-  'Capacitaciones de la plataforma': 'Sesion reprogramada',
-  'Formulario final': 'Sin abrir',
-};
-
-export const ENEUN_DEFAULT_JOURNEY_STEPS: EneunJourneyStepState[] = ENEUN_PROCESS_NODES.map(
-  (node) => ({
-    label: node,
-    status: ENEUN_DEFAULT_STEP_STATUS_BY_NODE[node],
-    detail: ENEUN_DEFAULT_STEP_DETAIL_BY_NODE[node],
-  }),
-);

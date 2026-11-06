@@ -1,5 +1,4 @@
-import { getSql } from './db';
-import { getTrainingSql } from './training-db';
+import { getSql, getTrainingSql } from './db';
 import { ENEUN_PROCESS_NODES, type EneunJourneyStepState } from './eneun-schema';
 import { getDatePartsInAppTimeZone } from './timezone';
 
@@ -14,9 +13,7 @@ export interface ParticipantViewModel {
   uuid: string;
 }
 
-interface RegistrationRow {
-  id?: number | null;
-  email?: string | null;
+interface ParticipantRow {
   first_name: string | null;
   last_name: string | null;
   document_type: string | null;
@@ -24,17 +21,19 @@ interface RegistrationRow {
   university: string | null;
   faculty: string | null;
   ticket_type: string | null;
-  uuid?: string | null;
-  registered_at?: string | Date | null;
-  confirm_answers?: unknown;
-  confirm_submitted_at?: string | Date | null;
-  final_submitted_at?: string | Date | null;
-  attendee_submitted_at?: string | Date | null;
-  confirmation_campus?: string | null;
-  attendee_identification_number?: string | null;
-  attendee_lodging_choice?: string | null;
-  attendee_camping_confirmation?: string | null;
-  attendee_updated_at?: string | Date | null;
+  uuid: string | null;
+  confirm_answers: unknown;
+  attendee_identification_number: string | null;
+  attendee_lodging_choice: string | null;
+  attendee_camping_confirmation: string | null;
+}
+
+interface JourneyRegistrationRow {
+  id: number | null;
+  registered_at: string | Date | null;
+  confirm_submitted_at: string | Date | null;
+  confirmation_campus: string | null;
+  university: string | null;
 }
 
 interface ValidationProgress {
@@ -47,25 +46,20 @@ interface TrainingStatus {
   updated_at: string | Date | null;
 }
 
-export interface LocalAuthUser {
-  sub: string;
-  email: string;
-  name: string;
-}
-
-function parseCamping(ticketType: string | null): boolean {
-  if (!ticketType) {
-    return false;
-  }
-  return /camp|acamp|carpa/i.test(ticketType);
-}
+const NOT_AVAILABLE = 'No disponible';
+const NO_COMMITTEE = 'Sin comité asignado';
+const EMPTY_PROGRESS: ValidationProgress = { totalValidations: 0, completedValidations: 0 };
 
 function normalizeAnswer(value: string): string {
   return value
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .trim()
     .toLowerCase();
+}
+
+function parseCampingFromTicketType(ticketType: string | null): boolean {
+  return ticketType ? /camp|acamp|carpa/i.test(ticketType) : false;
 }
 
 function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean | null {
@@ -73,17 +67,8 @@ function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean | null
     return null;
   }
 
-  const record = confirmAnswers as Record<string, unknown>;
-  const baseHospedajeSituacion = record.base_hospedaje_situacion;
-
-  if (!baseHospedajeSituacion) {
-    return null;
-  }
-
-  const value = Array.isArray(baseHospedajeSituacion)
-    ? baseHospedajeSituacion[0]
-    : baseHospedajeSituacion;
-
+  const rawValue = (confirmAnswers as Record<string, unknown>).base_hospedaje_situacion;
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
   if (typeof value !== 'string') {
     return null;
   }
@@ -101,24 +86,11 @@ function parseCampingFromConfirmAnswers(confirmAnswers: unknown): boolean | null
     return false;
   }
 
-  // Si llega otro texto inesperado, no forzamos valor para permitir fallback por ticket_type.
+  // Texto inesperado: no se fuerza un valor para permitir el respaldo por ticket_type.
   return null;
 }
 
-function resolveCamping(ticketType: string | null, confirmAnswers: unknown): boolean {
-  const fromConfirmAnswers = parseCampingFromConfirmAnswers(confirmAnswers);
-  if (fromConfirmAnswers !== null) {
-    return fromConfirmAnswers;
-  }
-
-  return parseCamping(ticketType);
-}
-
-function parseCampingFromAttendee(row: RegistrationRow | undefined): boolean | null {
-  if (!row) {
-    return null;
-  }
-
+function parseCampingFromAttendee(row: ParticipantRow): boolean | null {
   const campingConfirmation = row.attendee_camping_confirmation?.trim().toUpperCase();
   if (campingConfirmation === 'YES') {
     return true;
@@ -133,33 +105,31 @@ function parseCampingFromAttendee(row: RegistrationRow | undefined): boolean | n
     return true;
   }
 
-  if (lodgingChoice) {
-    return false;
-  }
+  return lodgingChoice ? false : null;
+}
 
-  return null;
+function resolveCamping(row: ParticipantRow): boolean {
+  return (
+    parseCampingFromAttendee(row) ??
+    parseCampingFromConfirmAnswers(row.confirm_answers) ??
+    parseCampingFromTicketType(row.ticket_type)
+  );
 }
 
 function parseCommitteeFromConfirmAnswers(confirmAnswers: unknown): string {
   if (!confirmAnswers || typeof confirmAnswers !== 'object' || Array.isArray(confirmAnswers)) {
-    return 'Sin comité asignado';
+    return NO_COMMITTEE;
   }
 
-  const record = confirmAnswers as Record<string, unknown>;
-  const rawCommittee = record.base_equipo_organizacion;
-
-  const values = Array.isArray(rawCommittee)
-    ? rawCommittee
-    : rawCommittee == null
-      ? []
-      : [rawCommittee];
+  const rawCommittee = (confirmAnswers as Record<string, unknown>).base_equipo_organizacion;
+  const values = Array.isArray(rawCommittee) ? rawCommittee : rawCommittee == null ? [] : [rawCommittee];
 
   const normalized = values
     .filter((value): value is string => typeof value === 'string')
     .map((value) => value.trim())
     .filter((value) => value.length > 0 && value.toLowerCase() !== 'no');
 
-  return normalized.length > 0 ? normalized.join(', ') : 'Sin comité asignado';
+  return normalized.length > 0 ? normalized.join(', ') : NO_COMMITTEE;
 }
 
 function toJourneyDate(value: string | Date | null | undefined): string | null {
@@ -168,56 +138,45 @@ function toJourneyDate(value: string | Date | null | undefined): string | null {
   }
 
   const dateParts = getDatePartsInAppTimeZone(value);
-  if (!dateParts) {
-    return null;
-  }
-
-  return `${dateParts.day}·${dateParts.month}`;
+  return dateParts ? `${dateParts.day}·${dateParts.month}` : null;
 }
 
-function parseCountValue(value: unknown): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  return 0;
+function buildEmptyJourneySteps(): EneunJourneyStepState[] {
+  return ENEUN_PROCESS_NODES.map((label) => ({
+    label,
+    status: 'gray',
+    detail: 'Sin iniciar',
+  }));
 }
 
-async function getSedeValidationProgress(
-  registrationId: number,
-  campus: string,
-): Promise<ValidationProgress> {
+async function getSedeValidationProgress(registrationId: number, campus: string): Promise<ValidationProgress> {
   try {
     const sql = getSql();
-
-    const totalRows = (await sql`
-      SELECT count(*) as total
-      FROM sede_validations
-      WHERE lower(trim(campus)) = lower(trim(${campus}))
-    `) as Array<{ total: unknown }>;
-
-    const completedRows = (await sql`
-      SELECT count(*) as completed
-      FROM student_sede_validations ssv
-      JOIN sede_validations sv
-        ON sv.id = ssv.validation_id
-      WHERE ssv.registration_id = ${registrationId}
-        AND ssv.is_completed = true
-        AND lower(trim(sv.campus)) = lower(trim(${campus}))
-    `) as Array<{ completed: unknown }>;
+    // La sede se compara sin tildes ni mayúsculas, igual que en el panel admin.
+    const rows = (await sql`
+      SELECT
+        count(*)::int AS total,
+        count(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1
+            FROM student_sede_validations ssv
+            WHERE ssv.validation_id = sv.id
+              AND ssv.registration_id = ${registrationId}
+              AND ssv.is_completed = true
+          )
+        )::int AS completed
+      FROM sede_validations sv
+      WHERE translate(lower(trim(sv.campus)), 'áéíóúü', 'aeiouu')
+        = translate(lower(trim(${campus})), 'áéíóúü', 'aeiouu')
+    `) as Array<{ total: number; completed: number }>;
 
     return {
-      totalValidations: parseCountValue(totalRows[0]?.total),
-      completedValidations: parseCountValue(completedRows[0]?.completed),
+      totalValidations: Number(rows[0]?.total ?? 0),
+      completedValidations: Number(rows[0]?.completed ?? 0),
     };
-  } catch {
-    return {
-      totalValidations: 0,
-      completedValidations: 0,
-    };
+  } catch (error) {
+    console.error('Error fetching sede validation progress:', error);
+    return EMPTY_PROGRESS;
   }
 }
 
@@ -231,73 +190,64 @@ async function getTrainingStatusById(registrationId: number): Promise<TrainingSt
       LIMIT 1
     `) as Array<{ completada: boolean; updated_at: string | Date | null }>;
 
-    if (rows.length === 0) {
-      return null;
-    }
-
-    return {
-      completada: rows[0].completada,
-      updated_at: rows[0].updated_at,
-    };
+    const row = rows[0];
+    return row ? { completada: Boolean(row.completada), updated_at: row.updated_at } : null;
   } catch (error) {
     console.error('Error fetching training status:', error);
     return null;
   }
 }
 
-function buildJourneyStepsFromRegistration(
-  registration: RegistrationRow | undefined,
+async function getFinalFormSubmittedAt(registrationId: number): Promise<string | Date | null> {
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT updated_at
+    FROM attendees
+    WHERE attendee_id = ${String(registrationId)}
+    ORDER BY updated_at DESC
+    LIMIT 1
+  `) as Array<{ updated_at: string | Date | null }>;
+
+  return rows[0]?.updated_at ?? null;
+}
+
+function buildSedeValidationStep(
+  hasPreconfirmation: boolean,
+  { totalValidations, completedValidations }: ValidationProgress,
+): EneunJourneyStepState {
+  const label = 'Validacion de sede de origen';
+
+  if (!hasPreconfirmation) {
+    return { label, status: 'gray', detail: 'Pendiente de preconfirmación' };
+  }
+
+  if (totalValidations === 0) {
+    return { label, status: 'purple', detail: 'En espera de validaciones de sede' };
+  }
+
+  if (completedValidations >= totalValidations) {
+    return { label, status: 'green', detail: `Completado ${completedValidations}/${totalValidations}` };
+  }
+
+  if (completedValidations > 0) {
+    return { label, status: 'purple', detail: `En curso ${completedValidations}/${totalValidations}` };
+  }
+
+  return { label, status: 'red', detail: `Pendiente 0/${totalValidations}` };
+}
+
+function buildJourneySteps(
+  registration: JourneyRegistrationRow,
   validationProgress: ValidationProgress,
   trainingStatus: TrainingStatus | null,
+  finalFormSubmittedAt: string | Date | null,
 ): EneunJourneyStepState[] {
-  if (!registration) {
-    return ENEUN_PROCESS_NODES.map((label) => ({
-      label,
-      status: 'gray',
-      detail: 'Sin iniciar',
-    }));
-  }
-
   const preinscriptionDate = toJourneyDate(registration.registered_at);
   const preconfirmationDate = toJourneyDate(registration.confirm_submitted_at);
-  const finalSubmissionDate = toJourneyDate(registration.attendee_submitted_at);
+  const finalSubmissionDate = toJourneyDate(finalFormSubmittedAt);
   const trainingDate = toJourneyDate(trainingStatus?.updated_at);
-
   const hasPreconfirmation = Boolean(registration.confirm_submitted_at);
-  const { totalValidations, completedValidations } = validationProgress;
-
-  let sedeValidationStatus: EneunJourneyStepState;
-  if (!hasPreconfirmation) {
-    sedeValidationStatus = {
-      label: 'Validacion de sede de origen',
-      status: 'gray',
-      detail: 'Pendiente de preconfirmación',
-    };
-  } else if (totalValidations === 0) {
-    sedeValidationStatus = {
-      label: 'Validacion de sede de origen',
-      status: 'purple',
-      detail: 'En espera de validaciones de sede',
-    };
-  } else if (completedValidations >= totalValidations) {
-    sedeValidationStatus = {
-      label: 'Validacion de sede de origen',
-      status: 'green',
-      detail: `Completado ${completedValidations}/${totalValidations}`,
-    };
-  } else if (completedValidations > 0) {
-    sedeValidationStatus = {
-      label: 'Validacion de sede de origen',
-      status: 'purple',
-      detail: `En curso ${completedValidations}/${totalValidations}`,
-    };
-  } else {
-    sedeValidationStatus = {
-      label: 'Validacion de sede de origen',
-      status: 'red',
-      detail: `Pendiente 0/${totalValidations}`,
-    };
-  }
+  const trainingCompleted = Boolean(trainingStatus?.completada);
 
   return [
     {
@@ -314,11 +264,11 @@ function buildJourneyStepsFromRegistration(
           : 'Confirmado'
         : 'Pendiente de preconfirmación',
     },
-    sedeValidationStatus,
+    buildSedeValidationStep(hasPreconfirmation, validationProgress),
     {
       label: 'Capacitaciones de la plataforma',
-      status: trainingStatus?.completada ? 'green' : 'purple',
-      detail: trainingStatus?.completada
+      status: trainingCompleted ? 'green' : 'purple',
+      detail: trainingCompleted
         ? trainingDate
           ? `Completado el ${trainingDate}`
           : 'Completado'
@@ -326,8 +276,8 @@ function buildJourneyStepsFromRegistration(
     },
     {
       label: 'Formulario final',
-      status: registration.attendee_submitted_at ? 'green' : 'purple',
-      detail: registration.attendee_submitted_at
+      status: finalFormSubmittedAt ? 'green' : 'purple',
+      detail: finalFormSubmittedAt
         ? finalSubmissionDate
           ? `Completado el ${finalSubmissionDate}`
           : 'Completado'
@@ -345,31 +295,30 @@ async function getCommitteeByEmail(email: string): Promise<string> {
       WHERE lower(trim(email)) = lower(trim(${email}))
       ORDER BY coalesce(confirm_submitted_at, registered_at) DESC
       LIMIT 1
-    `) as Array<{ confirm_answers: unknown | null }>;
+    `) as Array<{ confirm_answers: unknown }>;
 
     return parseCommitteeFromConfirmAnswers(rows[0]?.confirm_answers ?? null);
   } catch {
-    return 'Sin comité asignado';
+    return NO_COMMITTEE;
   }
 }
 
 export async function getParticipantByEmail(email: string): Promise<ParticipantViewModel> {
-  const fallback: ParticipantViewModel = {
+  const buildFallback = async (): Promise<ParticipantViewModel> => ({
     fullName: email,
-    documentType: 'No disponible',
-    documentNumber: 'No disponible',
-    site: 'No disponible',
-    faculty: 'No disponible',
+    documentType: NOT_AVAILABLE,
+    documentNumber: NOT_AVAILABLE,
+    site: NOT_AVAILABLE,
+    faculty: NOT_AVAILABLE,
     camping: false,
     committee: await getCommitteeByEmail(email),
-    uuid: 'No disponible',
-  };
+    uuid: NOT_AVAILABLE,
+  });
 
   try {
     const sql = getSql();
-    const registrationRows = (await sql`
+    const rows = (await sql`
       SELECT
-        r.id,
         r.first_name,
         r.last_name,
         r.document_type,
@@ -381,45 +330,39 @@ export async function getParticipantByEmail(email: string): Promise<ParticipantV
         r.confirm_answers,
         a.identification_number AS attendee_identification_number,
         a.lodging_choice AS attendee_lodging_choice,
-        a.camping_confirmation AS attendee_camping_confirmation,
-        a.updated_at AS attendee_updated_at
+        a.camping_confirmation AS attendee_camping_confirmation
       FROM registrations r
       LEFT JOIN attendees a
         ON a.attendee_id = r.id::text
-      WHERE lower(r.email) = lower(${email})
+      WHERE lower(trim(r.email)) = lower(trim(${email}))
       ORDER BY COALESCE(a.updated_at, r.registered_at) DESC NULLS LAST, r.registered_at DESC
       LIMIT 1
-    `) as RegistrationRow[];
+    `) as ParticipantRow[];
 
-    const registration = registrationRows[0];
+    const registration = rows[0];
     if (!registration) {
-      return fallback;
+      return await buildFallback();
     }
 
-    const firstName = registration.first_name?.trim() ?? '';
-    const lastName = registration.last_name?.trim() ?? '';
-    const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || email;
-
-    const campingFromAttendee = parseCampingFromAttendee(registration);
-    const resolvedDocumentNumber =
-      registration.attendee_identification_number?.trim() ||
-      registration.document_number?.trim() ||
-      'No disponible';
+    const fullName =
+      [registration.first_name?.trim(), registration.last_name?.trim()].filter(Boolean).join(' ') || email;
 
     return {
       fullName,
-      documentType: registration.document_type?.trim() || 'No disponible',
-      documentNumber: resolvedDocumentNumber,
-      site: registration.university?.trim() || 'No disponible',
-      faculty: registration.faculty?.trim() || 'No disponible',
-      camping:
-        campingFromAttendee ??
-        resolveCamping(registration.ticket_type, registration.confirm_answers),
+      documentType: registration.document_type?.trim() || NOT_AVAILABLE,
+      documentNumber:
+        registration.attendee_identification_number?.trim() ||
+        registration.document_number?.trim() ||
+        NOT_AVAILABLE,
+      site: registration.university?.trim() || NOT_AVAILABLE,
+      faculty: registration.faculty?.trim() || NOT_AVAILABLE,
+      camping: resolveCamping(registration),
       committee: parseCommitteeFromConfirmAnswers(registration.confirm_answers),
-      uuid: registration.uuid?.trim() || 'No disponible',
+      uuid: registration.uuid?.trim() || NOT_AVAILABLE,
     };
-  } catch {
-    return fallback;
+  } catch (error) {
+    console.error('Error fetching participant:', error);
+    return buildFallback();
   }
 }
 
@@ -429,123 +372,60 @@ export async function getJourneyStepsByEmail(email: string): Promise<EneunJourne
     const rows = (await sql`
       SELECT
         r.id,
-        registered_at,
-        confirm_answers,
-        confirm_submitted_at,
-        final_submitted_at,
-        cs.campus as confirmation_campus,
-        r.university
+        r.registered_at,
+        r.confirm_submitted_at,
+        r.university,
+        cs.campus AS confirmation_campus
       FROM registrations r
       LEFT JOIN confirmation_submissions cs
         ON cs.registration_id = r.id
-      WHERE lower(trim(email)) = lower(trim(${email}))
+      WHERE lower(trim(r.email)) = lower(trim(${email}))
       ORDER BY r.registered_at DESC, cs.submitted_at DESC NULLS LAST
       LIMIT 1
-    `) as RegistrationRow[];
+    `) as JourneyRegistrationRow[];
 
     const registration = rows[0];
-    if (!registration || !registration.id) {
-      return buildJourneyStepsFromRegistration(
-        undefined,
-        {
-          totalValidations: 0,
-          completedValidations: 0,
-        },
-        null,
-      );
+    if (!registration?.id) {
+      return buildEmptyJourneySteps();
     }
 
+    const registrationId = registration.id;
     const campus = registration.confirmation_campus?.trim() || registration.university?.trim() || '';
-    const validationProgress = campus
-      ? await getSedeValidationProgress(registration.id, campus)
-      : { totalValidations: 0, completedValidations: 0 };
 
-    const attendeeRows = (await sql`
-      SELECT updated_at
-      FROM attendees
-      WHERE attendee_id = ${String(registration.id)}
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `) as Array<{ updated_at: string | Date | null }>;
+    const [validationProgress, trainingStatus, finalFormSubmittedAt] = await Promise.all([
+      campus ? getSedeValidationProgress(registrationId, campus) : Promise.resolve(EMPTY_PROGRESS),
+      getTrainingStatusById(registrationId),
+      getFinalFormSubmittedAt(registrationId),
+    ]);
 
-    const trainingStatus = await getTrainingStatusById(registration.id);
-
-    const registrationWithFinalStep: RegistrationRow = {
-      ...registration,
-      attendee_submitted_at: attendeeRows[0]?.updated_at ?? null,
-    };
-
-    return buildJourneyStepsFromRegistration(
-      registrationWithFinalStep,
-      validationProgress,
-      trainingStatus,
-    );
-  } catch {
-    return ENEUN_PROCESS_NODES.map((label) => ({
-      label,
-      status: 'gray',
-      detail: 'Sin iniciar',
-    }));
+    return buildJourneySteps(registration, validationProgress, trainingStatus, finalFormSubmittedAt);
+  } catch (error) {
+    console.error('Error building journey steps:', error);
+    return buildEmptyJourneySteps();
   }
 }
 
-function normalizeLocalUsername(username: string): string {
-  const cleaned = username.trim().toLowerCase();
-  if (!cleaned) {
-    return '';
+/**
+ * Sedes asociadas a un participante (las de sus preconfirmaciones o, si no
+ * tiene, la de su registro). Se usa para validar la vista previa de admins.
+ */
+export async function getParticipantCampusesByEmail(email: string): Promise<string[]> {
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT cs.campus AS confirmation_campus, r.university
+    FROM registrations r
+    LEFT JOIN confirmation_submissions cs
+      ON cs.registration_id = r.id
+    WHERE lower(trim(r.email)) = lower(trim(${email}))
+  `) as Array<{ confirmation_campus: string | null; university: string | null }>;
+
+  const confirmationCampuses = rows
+    .map((row) => row.confirmation_campus?.trim() ?? '')
+    .filter(Boolean);
+
+  if (confirmationCampuses.length > 0) {
+    return confirmationCampuses;
   }
-  return cleaned.replace(/@unal\.edu\.co$/i, '');
-}
 
-export async function authenticateWithDocument(
-  username: string,
-  documentNumber: string,
-): Promise<LocalAuthUser | null> {
-  const localUsername = normalizeLocalUsername(username);
-  const normalizedDocument = documentNumber.trim();
-
-  if (!localUsername || !normalizedDocument) {
-    return null;
-  }
-
-  const email = `${localUsername}@unal.edu.co`;
-
-  try {
-    const sql = getSql();
-    const registrationRows = (await sql`
-      SELECT
-        r.email,
-        r.first_name,
-        r.last_name,
-        r.document_number,
-        a.identification_number AS attendee_identification_number
-      FROM registrations r
-      LEFT JOIN attendees a
-        ON a.attendee_id = r.id::text
-      WHERE lower(trim(r.email)) = lower(trim(${email}))
-        AND (
-          regexp_replace(coalesce(a.identification_number, r.document_number, ''), '[^0-9]', '', 'g') = regexp_replace(${normalizedDocument}, '[^0-9]', '', 'g')
-          OR lower(trim(coalesce(a.identification_number, r.document_number, ''))) = lower(trim(${normalizedDocument}))
-        )
-      ORDER BY COALESCE(a.updated_at, r.registered_at) DESC NULLS LAST, r.registered_at DESC
-      LIMIT 1
-    `) as RegistrationRow[];
-
-    const registration = registrationRows[0];
-    if (!registration?.email) {
-      return null;
-    }
-
-    const firstName = registration.first_name?.trim() ?? '';
-    const lastName = registration.last_name?.trim() ?? '';
-    const name = [firstName, lastName].filter(Boolean).join(' ').trim() || registration.email;
-
-    return {
-      sub: `local:${registration.email.toLowerCase()}`,
-      email: registration.email.toLowerCase(),
-      name,
-    };
-  } catch {
-    return null;
-  }
+  return rows.map((row) => row.university?.trim() ?? '').filter(Boolean);
 }

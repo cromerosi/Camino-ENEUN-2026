@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import {
+  SESSION_MAX_AGE_SECONDS,
   createSignedSessionToken,
   exchangeCodeForTokens,
   fetchAuth0UserInfo,
@@ -9,24 +10,19 @@ import {
   isAllowedUnalEmail,
 } from '../../../lib/auth';
 import { getSql } from '../../../lib/db';
+import { buildCookie, buildExpiredCookie, getQueryValue, redirectTo, setNoStore } from '../../../lib/http';
 
-function redirect(res: NextApiResponse, destination: string): void {
-  res.writeHead(303, { Location: destination });
-  res.end();
+function clearAuthFlowCookies(): string[] {
+  return [buildExpiredCookie(getAuthStateCookieName()), buildExpiredCookie(getAuthPkceCookieName())];
 }
 
-function buildCookie(name: string, value: string, maxAgeSeconds: number): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
-}
-
-function clearCookie(name: string): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `${name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`;
-}
-
-function getQueryValue(value: string | string[] | undefined): string {
-  return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+function failLogin(res: NextApiResponse, errorCode: string, clearSession = false): void {
+  const cookies = clearAuthFlowCookies();
+  if (clearSession) {
+    cookies.push(buildExpiredCookie(getSessionCookieName()));
+  }
+  res.setHeader('Set-Cookie', cookies);
+  redirectTo(res, `/landing?error=${errorCode}`);
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -36,33 +32,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
+  setNoStore(res);
 
-  const stateFromQuery = getQueryValue(req.query.state).trim();
-  const code = getQueryValue(req.query.code).trim();
-  const auth0Error = getQueryValue(req.query.error).trim();
-  const auth0ErrorDescription = getQueryValue(req.query.error_description).trim().toLowerCase();
+  const stateFromQuery = getQueryValue(req.query.state);
+  const code = getQueryValue(req.query.code);
+  const auth0Error = getQueryValue(req.query.error);
+  const auth0ErrorDescription = getQueryValue(req.query.error_description).toLowerCase();
   const stateFromCookie = String(req.cookies[getAuthStateCookieName()] ?? '').trim();
   const codeVerifier = String(req.cookies[getAuthPkceCookieName()] ?? '').trim();
 
   if (auth0Error) {
     const isMissingAuth0Session =
       auth0Error === 'invalid_request' && auth0ErrorDescription.includes("couldn't find your session");
-    res.setHeader('Set-Cookie', [
-      clearCookie(getAuthStateCookieName()),
-      clearCookie(getAuthPkceCookieName()),
-    ]);
-    redirect(res, isMissingAuth0Session ? '/landing?error=auth0_session_missing' : '/landing?error=auth_failed');
+    failLogin(res, isMissingAuth0Session ? 'auth0_session_missing' : 'auth_failed');
     return;
   }
 
   if (!stateFromQuery || !code || !stateFromCookie || !codeVerifier || stateFromQuery !== stateFromCookie) {
-    res.setHeader('Set-Cookie', [
-      clearCookie(getAuthStateCookieName()),
-      clearCookie(getAuthPkceCookieName()),
-    ]);
-    redirect(res, '/landing?error=auth_failed');
+    failLogin(res, 'auth_failed');
     return;
   }
 
@@ -72,30 +59,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const email = String(auth0User.email ?? '').trim().toLowerCase();
 
     if (!email || !isAllowedUnalEmail(email)) {
-      res.setHeader('Set-Cookie', [
-        clearCookie(getAuthStateCookieName()),
-        clearCookie(getAuthPkceCookieName()),
-        clearCookie(getSessionCookieName()),
-      ]);
-      redirect(res, '/landing?error=forbidden_email_domain');
+      failLogin(res, 'forbidden_email_domain', true);
       return;
     }
 
     const sql = getSql();
-    const registrations = (await sql`
+    const registrations = await sql`
       SELECT 1
       FROM registrations
       WHERE lower(trim(email)) = lower(trim(${email}))
       LIMIT 1
-    `) as Array<{ '?column?': number }>;
+    `;
 
     if (registrations.length === 0) {
-      res.setHeader('Set-Cookie', [
-        clearCookie(getAuthStateCookieName()),
-        clearCookie(getAuthPkceCookieName()),
-        clearCookie(getSessionCookieName()),
-      ]);
-      redirect(res, '/landing?error=not_registered');
+      failLogin(res, 'not_registered', true);
       return;
     }
 
@@ -107,19 +84,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     res.setHeader('Set-Cookie', [
-      clearCookie(getAuthStateCookieName()),
-      clearCookie(getAuthPkceCookieName()),
-      buildCookie(getSessionCookieName(), sessionToken, 60 * 60 * 8),
+      ...clearAuthFlowCookies(),
+      buildCookie(getSessionCookieName(), sessionToken, SESSION_MAX_AGE_SECONDS),
     ]);
-
-    redirect(res, '/');
-    return;
-  } catch {
-    res.setHeader('Set-Cookie', [
-      clearCookie(getAuthStateCookieName()),
-      clearCookie(getAuthPkceCookieName()),
-    ]);
-    redirect(res, '/landing?error=auth_failed');
-    return;
+    redirectTo(res, '/');
+  } catch (error) {
+    console.error('Error en el callback de Auth0:', error);
+    failLogin(res, 'auth_failed');
   }
 }

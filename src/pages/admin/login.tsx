@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 
@@ -9,7 +9,7 @@ export default function AdminLogin() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
@@ -22,11 +22,12 @@ export default function AdminLogin() {
       });
 
       if (res.ok) {
-        router.push('/admin/sede');
-      } else {
-        const data = await res.json();
-        setError(data.error || 'Autenticación fallida');
+        await router.push('/admin/sede');
+        return;
       }
+
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      setError(data.error || 'Autenticación fallida');
     } catch {
       setError('Error de conexión');
     } finally {
@@ -50,16 +51,18 @@ export default function AdminLogin() {
         <p className="text-sm text-slate-400 text-center mb-8">Ingresa tus credenciales para administrar las validaciones de tu sede.</p>
         
         {error && (
-          <div className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div role="alert" className="mb-6 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5 ml-1">Usuario</label>
+            <label htmlFor="admin-username" className="block text-sm font-medium text-slate-300 mb-1.5 ml-1">Usuario</label>
             <input
+              id="admin-username"
               type="text"
+              autoComplete="username"
               required
               className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-white placeholder-slate-500 outline-none transition focus:border-emerald-500 focus:bg-slate-800"
               placeholder="Ej. admin_bogota"
@@ -68,9 +71,11 @@ export default function AdminLogin() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5 ml-1">Contraseña</label>
+            <label htmlFor="admin-password" className="block text-sm font-medium text-slate-300 mb-1.5 ml-1">Contraseña</label>
             <input
+              id="admin-password"
               type="password"
+              autoComplete="current-password"
               required
               className="w-full rounded-xl border border-slate-700 bg-slate-800/50 px-4 py-3 text-white placeholder-slate-500 outline-none transition focus:border-emerald-500 focus:bg-slate-800"
               placeholder="••••••••"

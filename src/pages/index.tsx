@@ -1,16 +1,22 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Layout from '../layouts/Layout';
 import { type EneunNodeStatus, type EneunJourneyStepState } from '../lib/eneun-schema';
-import { getAdminSessionCookieName, verifyAdminSessionToken } from '../lib/admin-auth';
+import { getAdminSessionCookieName, hasCampusAccess, verifyAdminSessionToken } from '../lib/admin-auth';
 import { getSessionCookieName, verifySignedSessionToken } from '../lib/auth';
 import { getSql } from '../lib/db';
+import { buildExpiredCookie, isPlainObject } from '../lib/http';
 import {
   getJourneyStepsByEmail,
   getParticipantByEmail,
+  getParticipantCampusesByEmail,
   type ParticipantViewModel,
 } from '../lib/participant';
+
+const TRAINING_PLATFORM_URL = 'https://capacitacioneseneun.vercel.app/login';
+const JOURNEY_REFRESH_INTERVAL_MS = 10_000;
 
 const STEP_LABELS: Record<string, string> = {
   Preinscripcion: 'Preinscripción',
@@ -180,7 +186,6 @@ interface DashboardPageProps {
   authEmail: string;
   participant: ParticipantViewModel;
   journeySteps: EneunJourneyStepState[];
-  progressPercent: number;
   campingCopy: string;
   isAdminPreview: boolean;
   previewEmail: string | null;
@@ -195,7 +200,6 @@ export default function DashboardPage({
   authEmail,
   participant,
   journeySteps,
-  progressPercent,
   campingCopy,
   isAdminPreview,
   previewEmail,
@@ -215,14 +219,14 @@ export default function DashboardPage({
       return res.json() as Promise<{ journeySteps: EneunJourneyStepState[] }>;
     },
     initialData: { journeySteps },
-    refetchInterval: 10000,
+    // Los datos iniciales vienen del servidor: no se vuelve a consultar al montar.
+    staleTime: JOURNEY_REFRESH_INTERVAL_MS,
+    refetchInterval: JOURNEY_REFRESH_INTERVAL_MS,
     enabled: !isAdminPreview,
   });
 
   const currentJourneySteps = journeyData?.journeySteps ?? journeySteps;
-  const currentProgressPercent = Math.round(
-    (currentJourneySteps.filter((step: EneunJourneyStepState) => step.status === 'green').length / currentJourneySteps.length) * 100,
-  );
+  const currentProgressPercent = calculateProgressPercent(currentJourneySteps);
 
   const [showAttendeeDetails, setShowAttendeeDetails] = useState(false);
   const attendeeEntries = buildFriendlyAttendeeEntries(attendeeData);
@@ -243,7 +247,7 @@ export default function DashboardPage({
         </div>
         <div className="relative mx-auto flex max-w-6xl flex-col gap-12">
           <header className="text-center">
-            <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">¡Tú camino a Manizales! · ENEUN 2026</p>
+            <p className="text-xs uppercase tracking-[0.4em] text-emerald-300">¡Tu camino a Manizales! · ENEUN 2026</p>
             <h1 className="mt-5 text-3xl font-semibold text-white sm:text-5xl">Panel de visualización del participante</h1>
             <p className="mx-auto mt-4 max-w-2xl text-base text-slate-300">
               En esta página podrás visualizar tu progreso y estado como participante en el evento ENEUN 2026. Recuerda que si no cumples todos los pasos requeridos, no podrás asistir al evento. ¡Sigue avanzando para asegurar tu participación en el ENEUN 2026 · Manizales!
@@ -320,12 +324,21 @@ export default function DashboardPage({
                 >
                   {showAttendeeDetails ? 'Mostrar menos' : 'Mostrar más'}
                 </button>
-                <a
-                  href="/api/auth/logout"
-                  className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
-                >
-                  Cerrar sesión
-                </a>
+                {isAdminPreview ? (
+                  <Link
+                    href="/admin/sede"
+                    className="inline-flex items-center rounded-full border border-violet-300/30 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-violet-200 transition hover:border-violet-200/60 hover:text-violet-100"
+                  >
+                    Volver al panel
+                  </Link>
+                ) : (
+                  <a
+                    href="/api/auth/logout"
+                    className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-300 transition hover:border-white/50 hover:text-white"
+                  >
+                    Cerrar sesión
+                  </a>
+                )}
               </div>
               {showAttendeeDetails && (
                 <div className="mt-6 rounded-2xl border border-white/10 bg-slate-900/45 p-4 sm:p-5">
@@ -374,9 +387,9 @@ export default function DashboardPage({
                       return (
                         <li className="flex min-w-0 flex-col items-center text-center lg:min-w-[120px] lg:flex-1" key={step.label}>
                           <a
-                            href="https://capacitacioneseneun.vercel.app/login"
+                            href={TRAINING_PLATFORM_URL}
                             target="_blank"
-                            rel="noreferrer"
+                            rel="noopener noreferrer"
                             className="group flex min-w-0 flex-col items-center text-center"
                           >
                             <div
@@ -427,7 +440,11 @@ export default function DashboardPage({
               </div>
               <div className="mt-10 rounded-2xl border border-white/10 bg-white/5 p-5">
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">Paso final</p>
-                {finalFormUrl ? (
+                {isAdminPreview ? (
+                  <span className="mt-4 block text-xs text-slate-400">
+                    El enlace al formulario final solo está disponible para el participante.
+                  </span>
+                ) : finalFormUrl ? (
                   <a
                     href={finalFormUrl}
                     className="mt-4 inline-flex items-center rounded-full bg-gradient-to-r from-emerald-400 via-fuchsia-400 to-rose-400 px-5 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-950 transition hover:brightness-110"
@@ -446,24 +463,85 @@ export default function DashboardPage({
   );
 }
 
+function calculateProgressPercent(steps: EneunJourneyStepState[]): number {
+  if (steps.length === 0) {
+    return 0;
+  }
+  return Math.round((steps.filter((step) => step.status === 'green').length / steps.length) * 100);
+}
+
+function buildFinalFormUrl(email: string): string {
+  const finalFormBaseUrl =
+    process.env.FINAL_FORM_URL?.trim() || process.env.NEXT_PUBLIC_FINAL_FORM_URL?.trim() || '';
+
+  if (!finalFormBaseUrl) {
+    return '/formulario-final';
+  }
+
+  try {
+    const url = new URL(finalFormBaseUrl);
+    url.searchParams.set('email', email);
+    return url.toString();
+  } catch {
+    const separator = finalFormBaseUrl.includes('?') ? '&' : '?';
+    return `${finalFormBaseUrl}${separator}email=${encodeURIComponent(email)}`;
+  }
+}
+
+async function getAttendeePayload(email: string, uuid: string): Promise<Record<string, unknown> | null> {
+  try {
+    const sql = getSql();
+    const rows = (await sql`
+      SELECT payload
+      FROM attendees
+      WHERE
+        lower(trim(coalesce(email, ''))) = lower(trim(${email}))
+        OR uuid::text = ${uuid}
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `) as Array<{ payload: unknown }>;
+
+    const payload = rows[0]?.payload;
+    return isPlainObject(payload) ? payload : null;
+  } catch (error) {
+    console.error('Error fetching attendee payload:', error);
+    return null;
+  }
+}
+
 export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async (context) => {
-  const sessionToken = context.req.cookies[getSessionCookieName()];
-  const authUser = await verifySignedSessionToken(sessionToken);
   const rawPreviewEmail = context.query.previewEmail;
-  const previewEmail = typeof rawPreviewEmail === 'string' ? rawPreviewEmail.trim() : '';
+  const previewEmail = typeof rawPreviewEmail === 'string' ? rawPreviewEmail.trim().toLowerCase() : '';
   const rawFinalFormStatus = context.query.finalFormStatus;
   const finalFormStatus = typeof rawFinalFormStatus === 'string' ? rawFinalFormStatus.trim() : '';
 
-  let targetEmail = authUser?.email ?? '';
+  let targetEmail = '';
   let isAdminPreview = false;
 
-  if (!targetEmail && previewEmail) {
-    const adminToken = context.req.cookies[getAdminSessionCookieName()];
-    const adminSession = await verifyAdminSessionToken(adminToken);
+  // Vista previa desde el panel admin ("Ver index"): tiene prioridad sobre la
+  // sesión de estudiante y solo se permite para participantes de las sedes a
+  // las que el admin tiene acceso.
+  if (previewEmail) {
+    const adminSession = await verifyAdminSessionToken(context.req.cookies[getAdminSessionCookieName()]);
     if (adminSession) {
+      const campuses = await getParticipantCampusesByEmail(previewEmail);
+      if (!campuses.some((campus) => hasCampusAccess(adminSession, campus))) {
+        return {
+          redirect: {
+            destination: '/admin/sede',
+            permanent: false,
+          },
+        };
+      }
+
       targetEmail = previewEmail;
       isAdminPreview = true;
     }
+  }
+
+  if (!isAdminPreview) {
+    const authUser = await verifySignedSessionToken(context.req.cookies[getSessionCookieName()]);
+    targetEmail = authUser?.email ?? '';
   }
 
   if (!targetEmail) {
@@ -478,19 +556,15 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
   if (!isAdminPreview) {
     try {
       const sql = getSql();
-      const registrations = (await sql`
+      const registrations = await sql`
         SELECT 1
         FROM registrations
         WHERE lower(trim(email)) = lower(trim(${targetEmail}))
         LIMIT 1
-      `) as Array<{ '?column?': number }>;
+      `;
 
       if (registrations.length === 0) {
-        const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-        context.res.setHeader(
-          'Set-Cookie',
-          `${getSessionCookieName()}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
-        );
+        context.res.setHeader('Set-Cookie', buildExpiredCookie(getSessionCookieName()));
         return {
           redirect: {
             destination: '/landing?error=not_registered',
@@ -498,7 +572,8 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
           },
         };
       }
-    } catch {
+    } catch (error) {
+      console.error('Error verifying registration:', error);
       return {
         redirect: {
           destination: '/landing?error=not_registered',
@@ -508,62 +583,21 @@ export const getServerSideProps: GetServerSideProps<DashboardPageProps> = async 
     }
   }
 
-  const participant = await getParticipantByEmail(targetEmail);
-  const journeySteps = await getJourneyStepsByEmail(targetEmail);
-  let attendeeData: Record<string, unknown> | null = null;
-
-  try {
-    const sql = getSql();
-    const attendeeRows = (await sql`
-      SELECT payload
-      FROM attendees
-      WHERE
-        lower(trim(coalesce(email, ''))) = lower(trim(${targetEmail}))
-        OR uuid::text = ${participant.uuid || ''}
-      ORDER BY updated_at DESC
-      LIMIT 1
-    `) as Array<{ payload: unknown }>;
-
-    const rawPayload = attendeeRows[0]?.payload;
-    if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
-      attendeeData = rawPayload as Record<string, unknown>;
-    }
-  } catch {
-    attendeeData = null;
-  }
-
-  const finalFormBaseUrl =
-    process.env.FINAL_FORM_URL?.trim() || process.env.NEXT_PUBLIC_FINAL_FORM_URL?.trim() || '';
-  const internalFinalFormUrl = '/formulario-final';
-
-  let finalFormUrl: string | null = null;
-  if (finalFormBaseUrl) {
-    try {
-      const url = new URL(finalFormBaseUrl);
-      url.searchParams.set('email', targetEmail);
-      finalFormUrl = url.toString();
-    } catch {
-      const separator = finalFormBaseUrl.includes('?') ? '&' : '?';
-      finalFormUrl = `${finalFormBaseUrl}${separator}email=${encodeURIComponent(targetEmail)}`;
-    }
-  } else {
-    finalFormUrl = internalFinalFormUrl;
-  }
-
-  const progressPercent = Math.round(
-    (journeySteps.filter((step) => step.status === 'green').length / journeySteps.length) * 100,
-  );
+  const [participant, journeySteps] = await Promise.all([
+    getParticipantByEmail(targetEmail),
+    getJourneyStepsByEmail(targetEmail),
+  ]);
+  const attendeeData = await getAttendeePayload(targetEmail, participant.uuid);
 
   return {
     props: {
       authEmail: targetEmail,
       participant,
       journeySteps,
-      progressPercent,
       campingCopy: participant.camping ? 'Acampa' : 'No acampa',
       isAdminPreview,
       previewEmail: isAdminPreview ? targetEmail : null,
-      finalFormUrl,
+      finalFormUrl: buildFinalFormUrl(targetEmail),
       showFinalFormSubmittedAlert: finalFormStatus === 'already-submitted',
       showPreconfirmationRequiredAlert: finalFormStatus === 'preconfirmation-required',
       showFinalFormClosedAlert: finalFormStatus === 'closed',

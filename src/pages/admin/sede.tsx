@@ -1,22 +1,31 @@
-import { GetServerSideProps } from 'next';
-import { useState, useEffect, useMemo } from 'react';
+import type { GetServerSideProps } from 'next';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import Head from 'next/head';
 import {
   getAdminSessionCookieName,
+  hasMultipleCampusScope,
   isSupremeAdminSession,
   verifyAdminSessionToken,
 } from '../../lib/admin-auth';
+import { isSameCampus, normalizeCampusName, uniqueCampuses } from '../../lib/campus';
+
+const MAX_VALIDATIONS_PER_CAMPUS = 7;
+const MIN_VALIDATION_COLUMNS = 3;
+const BULK_RESULT_VISIBLE_MS = 15000;
 
 interface AdminSedeProps {
   adminName: string;
   adminCampus: string;
+  adminCampuses: string[];
+  hasMultipleCampuses: boolean;
   canManageFinalFormAccess: boolean;
 }
 
 interface Validation {
   id: number;
   name: string;
+  campus: string | null;
 }
 
 interface StudentValidation {
@@ -26,10 +35,11 @@ interface StudentValidation {
 
 interface Student {
   registration_id: number;
-  first_name: string;
-  last_name: string;
-  email: string;
-  document_number: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  document_number: string | null;
+  campus: string | null;
   validations: StudentValidation[];
 }
 
@@ -38,9 +48,23 @@ interface FinalFormAllowedUser {
   updated_at: string;
 }
 
-export const getServerSideProps: GetServerSideProps = async (context) => {
-  const token = context.req.cookies[getAdminSessionCookieName()];
-  const session = await verifyAdminSessionToken(token);
+interface StudentProgress {
+  applicable: number;
+  completed: number;
+  percent: number;
+  isCompleted: boolean;
+}
+
+type StatusFilter = 'all' | 'completed' | 'pending';
+
+const STATUS_FILTER_OPTIONS: Array<{ id: StatusFilter; label: string }> = [
+  { id: 'all', label: 'Todos' },
+  { id: 'completed', label: 'Cumple' },
+  { id: 'pending', label: 'No Cumple' },
+];
+
+export const getServerSideProps: GetServerSideProps<AdminSedeProps> = async (context) => {
+  const session = await verifyAdminSessionToken(context.req.cookies[getAdminSessionCookieName()]);
 
   if (!session) {
     return {
@@ -55,26 +79,98 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
     props: {
       adminName: session.name,
       adminCampus: session.campus,
+      adminCampuses: session.campuses,
+      hasMultipleCampuses: hasMultipleCampusScope(session),
       canManageFinalFormAccess: isSupremeAdminSession(session),
     },
   };
 };
 
-export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalFormAccess }: AdminSedeProps) {
+/** Minúsculas y sin tildes, para comparar nombres pegados desde Excel. */
+function normalizeSearchText(value: string | null | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Extrae el correo de la línea o la limpia de caracteres no imprimibles. */
+function cleanBulkLine(rawLine: string): string {
+  const trimmed = rawLine.trim().toLowerCase();
+  const emailMatch = trimmed.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+  if (emailMatch) return emailMatch[0];
+  return trimmed.replace(/[^\w\s@.\-áéíóúüñ]/g, '').trim();
+}
+
+/** Números presentes en la línea (se ignoran puntos de miles: 1.020.304 → 1020304). */
+function extractNumberTokens(line: string): Set<string> {
+  const tokens = line.match(/\d[\d.]*/g) ?? [];
+  return new Set(tokens.map((token) => token.replace(/\./g, '')).filter(Boolean));
+}
+
+function studentMatchesLine(student: Student, line: string, normalizedLine: string, numberTokens: Set<string>): boolean {
+  const doc = (student.document_number ?? '').trim().toLowerCase();
+  if (doc) {
+    const docDigits = doc.replace(/\D/g, '');
+    const isNumericDoc = docDigits.length > 0 && docDigits === doc.replace(/[\s.]/g, '');
+    if (isNumericDoc ? numberTokens.has(docDigits) : line.includes(doc)) {
+      return true;
+    }
+  }
+
+  const email = (student.email ?? '').trim().toLowerCase();
+  if (email && line.includes(email)) {
+    return true;
+  }
+
+  const firstName = normalizeSearchText(student.first_name);
+  const lastName = normalizeSearchText(student.last_name);
+  if (!firstName || !lastName) {
+    return false;
+  }
+
+  return (
+    normalizedLine.includes(`${firstName} ${lastName}`) ||
+    (normalizedLine.includes(firstName) && normalizedLine.includes(lastName))
+  );
+}
+
+function getStudentFullName(student: Student): string {
+  return [student.first_name, student.last_name].filter(Boolean).join(' ');
+}
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  const data = (await response.json().catch(() => ({}))) as { error?: string };
+  return data.error || fallback;
+}
+
+export default function SedeAdminPanel({
+  adminName,
+  adminCampus,
+  adminCampuses,
+  hasMultipleCampuses,
+  canManageFinalFormAccess,
+}: AdminSedeProps) {
   const [validations, setValidations] = useState<Validation[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [newValName, setNewValName] = useState('');
+  const [newValCampus, setNewValCampus] = useState('');
+  const [isCreatingValidation, setIsCreatingValidation] = useState(false);
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [deletingValidationId, setDeletingValidationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'pending'>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
-  // Bulk validation state
+  // Validación masiva
   const [scrapText, setScrapText] = useState('');
   const [scrapValidationId, setScrapValidationId] = useState<number | ''>('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ success: number; unmatched: string[] } | null>(null);
+
+  // Control del formulario final (solo Admin Supremo)
   const [finalFormOpen, setFinalFormOpen] = useState(false);
   const [finalFormLoading, setFinalFormLoading] = useState(false);
   const [finalFormEmail, setFinalFormEmail] = useState('');
@@ -86,59 +182,91 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
   const handleLogout = async () => {
     try {
       await fetch('/api/admin/logout', { method: 'POST' });
-      router.push('/landing');
-    } catch (e) {
-      console.error('Logout error', e);
+    } catch (error) {
+      console.error('Logout error', error);
+    } finally {
+      await router.push('/landing');
     }
   };
 
-  useEffect(() => {
-    fetchData();
-    if (canManageFinalFormAccess) {
-      fetchFinalFormAccess();
-    }
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
+  /** Recarga validaciones y estudiantes. Con `silent` no se muestra el spinner. */
+  const fetchData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     try {
       const [valRes, stuRes] = await Promise.all([
         fetch('/api/admin/sede-validations'),
-        fetch('/api/admin/students')
+        fetch('/api/admin/students'),
       ]);
       if (valRes.ok) {
-        const valData = await valRes.json();
-        setValidations(valData.validations || []);
+        const valData = (await valRes.json()) as { validations?: Validation[] };
+        setValidations(valData.validations ?? []);
       }
       if (stuRes.ok) {
-        const stuData = await stuRes.json();
-        setStudents(stuData.students || []);
+        const stuData = (await stuRes.json()) as { students?: Student[] };
+        setStudents(stuData.students ?? []);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
+  }, []);
+
+  const applyFinalFormData = (data: { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] }) => {
+    setFinalFormOpen(Boolean(data.isOpen));
+    setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
   };
 
-  const fetchFinalFormAccess = async () => {
+  const fetchFinalFormAccess = useCallback(async () => {
     try {
       const response = await fetch('/api/admin/final-form-access');
       if (!response.ok) {
         return;
       }
-
-      const data = await response.json() as {
-        isOpen?: boolean;
-        allowedUsers?: FinalFormAllowedUser[];
-      };
-
+      const data = (await response.json()) as { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] };
       setFinalFormOpen(Boolean(data.isOpen));
       setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
     } catch (error) {
       console.error(error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchData();
+    if (canManageFinalFormAccess) {
+      void fetchFinalFormAccess();
+    }
+  }, [canManageFinalFormAccess, fetchData, fetchFinalFormAccess]);
+
+  useEffect(() => {
+    if (!bulkResult) return;
+    const timeout = window.setTimeout(() => setBulkResult(null), BULK_RESULT_VISIBLE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [bulkResult]);
+
+  // Sedes disponibles para crear validaciones (solo admins multisede o globales).
+  const campusOptions = useMemo(() => {
+    if (!hasMultipleCampuses) return [];
+    const options = uniqueCampuses([
+      ...students.map((student) => student.campus),
+      ...validations.map((validation) => validation.campus),
+      ...adminCampuses,
+    ]);
+    return options.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [adminCampuses, hasMultipleCampuses, students, validations]);
+
+  const validationsInTargetCampus = useMemo(() => {
+    if (!hasMultipleCampuses) return validations.length;
+    if (!newValCampus) return 0;
+    return validations.filter((validation) => isSameCampus(validation.campus, newValCampus)).length;
+  }, [hasMultipleCampuses, newValCampus, validations]);
+
+  const isValidationLimitReached = validationsInTargetCampus >= MAX_VALIDATIONS_PER_CAMPUS;
+  const canCreateValidation =
+    Boolean(newValName.trim()) &&
+    !isValidationLimitReached &&
+    !isCreatingValidation &&
+    (!hasMultipleCampuses || Boolean(newValCampus));
 
   const handleSetGlobalFinalFormState = async (nextState: boolean) => {
     setFinalFormLoading(true);
@@ -152,14 +280,11 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'No se pudo actualizar el estado global' }));
-        setFinalFormStatusMessage(errorData.error || 'No se pudo actualizar el estado global');
+        setFinalFormStatusMessage(await readErrorMessage(response, 'No se pudo actualizar el estado global'));
         return;
       }
 
-      const data = await response.json() as { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] };
-      setFinalFormOpen(Boolean(data.isOpen));
-      setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
+      applyFinalFormData(await response.json());
       setFinalFormStatusMessage(nextState ? 'Formulario final abierto globalmente.' : 'Formulario final cerrado globalmente.');
     } catch (error) {
       console.error(error);
@@ -171,7 +296,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
 
   const handleSetUserFinalFormAccess = async (allow: boolean, emailOverride?: string) => {
     const email = (emailOverride ?? finalFormEmail).trim().toLowerCase();
-    if (!email) {
+    if (!email || !email.includes('@')) {
       setFinalFormStatusMessage('Debes ingresar un correo válido.');
       return;
     }
@@ -187,14 +312,11 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'No se pudo actualizar el permiso del usuario' }));
-        setFinalFormStatusMessage(errorData.error || 'No se pudo actualizar el permiso del usuario');
+        setFinalFormStatusMessage(await readErrorMessage(response, 'No se pudo actualizar el permiso del usuario'));
         return;
       }
 
-      const data = await response.json() as { isOpen?: boolean; allowedUsers?: FinalFormAllowedUser[] };
-      setFinalFormOpen(Boolean(data.isOpen));
-      setAllowedUsers(Array.isArray(data.allowedUsers) ? data.allowedUsers : []);
+      applyFinalFormData(await response.json());
       setFinalFormStatusMessage(
         allow
           ? `Usuario habilitado mientras el formulario esté cerrado: ${email}`
@@ -212,27 +334,38 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
   };
 
   const handleCreateValidation = async () => {
-    if (!newValName.trim() || validations.length >= 7) return;
+    if (!canCreateValidation) return;
+
+    setIsCreatingValidation(true);
     try {
-      const res = await fetch('/api/admin/sede-validations', {
+      const query = hasMultipleCampuses ? `?campus=${encodeURIComponent(newValCampus)}` : '';
+      const res = await fetch(`/api/admin/sede-validations${query}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newValName })
+        body: JSON.stringify({ name: newValName.trim() }),
       });
       if (res.ok) {
         setNewValName('');
-        fetchData();
+        await fetchData({ silent: true });
       } else {
-        const err = await res.json();
-        alert(err.error || 'Error al crear validación');
+        alert(await readErrorMessage(res, 'Error al crear validación'));
       }
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
+      alert('Error de red al crear la validación.');
+    } finally {
+      setIsCreatingValidation(false);
     }
   };
 
+  const validationsById = useMemo(
+    () => new Map(validations.map((validation) => [validation.id, validation])),
+    [validations],
+  );
+
   const handleBulkValidate = async () => {
-    if (!scrapText.trim() || !scrapValidationId) {
+    const targetValidation = scrapValidationId ? validationsById.get(scrapValidationId) : undefined;
+    if (!scrapText.trim() || !targetValidation) {
       alert('Ingresa texto y selecciona una validación');
       return;
     }
@@ -240,70 +373,47 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
     setBulkLoading(true);
     setBulkResult(null);
 
-    // Clean each line: extract email if present, otherwise strip non-printable/junk chars
-    const rawLines = scrapText
-      .split(/\r?\n/)
-      .map((l) => {
-        const trimmed = l.trim().toLowerCase();
-        // Try to extract a clean email from the line
-        const emailMatch = trimmed.match(/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/);
-        if (emailMatch) return emailMatch[0];
-        // Otherwise strip non-printable characters and keep alphanumeric + spaces
-        return trimmed.replace(/[^\w\s@.\-áéíóúüñ]/g, '').trim();
-      })
-      .filter(Boolean);
-    const matchedIds = new Set<number>();
-    const unmatchedLines: string[] = [];
-
-    rawLines.forEach((line) => {
-      const matched = students.find((s) => {
-        const doc = (s.document_number ?? '').toLowerCase();
-        const email = (s.email ?? '').toLowerCase();
-        const fName = s.first_name.toLowerCase();
-        const lName = s.last_name.toLowerCase();
-        const fullName = `${fName} ${lName}`;
-        return (
-          (doc && line.includes(doc)) ||
-          (email && line.includes(email)) ||
-          (fullName && line.includes(fullName)) ||
-          (line.includes(fName) && line.includes(lName))
-        );
-      });
-      if (matched) {
-        matchedIds.add(matched.registration_id);
-      } else {
-        unmatchedLines.push(line);
-      }
-    });
-
-    const registration_ids = Array.from(matchedIds);
-
-    if (registration_ids.length === 0) {
-      alert('No se encontraron coincidencias (por nombre, correo ni documento) en los datos ingresados.');
-      setBulkLoading(false);
-      return;
-    }
-
     try {
+      // Solo se buscan estudiantes de la sede a la que pertenece la validación.
+      const candidates = students.filter((student) => isSameCampus(student.campus, targetValidation.campus));
+      const lines = scrapText.split(/\r?\n/).map(cleanBulkLine).filter(Boolean);
+      const matchedIds = new Set<number>();
+      const unmatchedLines: string[] = [];
+
+      for (const line of lines) {
+        const normalizedLine = normalizeSearchText(line);
+        const numberTokens = extractNumberTokens(line);
+        const matched = candidates.find((student) => studentMatchesLine(student, line, normalizedLine, numberTokens));
+        if (matched) {
+          matchedIds.add(matched.registration_id);
+        } else {
+          unmatchedLines.push(line);
+        }
+      }
+
+      const registrationIds = Array.from(matchedIds);
+      if (registrationIds.length === 0) {
+        alert('No se encontraron coincidencias (por nombre, correo ni documento) en los datos ingresados.');
+        return;
+      }
+
       const res = await fetch('/api/admin/bulk-validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          registration_ids,
-          validation_id: Number(scrapValidationId),
+          registration_ids: registrationIds,
+          validation_id: targetValidation.id,
           is_completed: true,
         }),
       });
 
       if (res.ok) {
-        const data = await res.json();
+        const data = (await res.json()) as { count?: number };
         setScrapText('');
-        setBulkResult({ success: data.count, unmatched: unmatchedLines });
-        fetchData();
-        setTimeout(() => setBulkResult(null), 15000);
+        setBulkResult({ success: data.count ?? 0, unmatched: unmatchedLines });
+        await fetchData({ silent: true });
       } else {
-        const err = await res.json();
-        alert(err.error || 'Error al validar masivamente');
+        alert(await readErrorMessage(res, 'Error al validar masivamente'));
       }
     } catch (error) {
       console.error(error);
@@ -314,21 +424,19 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
   };
 
   const handleToggleValidation = async (registrationId: number, validationId: number, currentStatus: boolean) => {
+    const nextStatus = !currentStatus;
 
-    // Optimistic UI update
-    setStudents(prev => prev.map(s => {
-      if (s.registration_id === registrationId) {
-        const hasVal = s.validations.find(v => v.validation_id === validationId);
-        let newVal;
-        if (hasVal) {
-          newVal = s.validations.map(v => v.validation_id === validationId ? { ...v, is_completed: !currentStatus } : v);
-        } else {
-          newVal = [...s.validations, { validation_id: validationId, is_completed: !currentStatus }];
-        }
-        return { ...s, validations: newVal };
-      }
-      return s;
-    }));
+    // Actualización optimista: la tabla no se recarga si el guardado funciona.
+    setStudents((prev) =>
+      prev.map((student) => {
+        if (student.registration_id !== registrationId) return student;
+        const exists = student.validations.some((v) => v.validation_id === validationId);
+        const nextValidations = exists
+          ? student.validations.map((v) => (v.validation_id === validationId ? { ...v, is_completed: nextStatus } : v))
+          : [...student.validations, { validation_id: validationId, is_completed: nextStatus }];
+        return { ...student, validations: nextValidations };
+      }),
+    );
 
     try {
       const res = await fetch('/api/admin/students', {
@@ -337,79 +445,81 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
         body: JSON.stringify({
           registration_id: registrationId,
           validation_id: validationId,
-          is_completed: !currentStatus
-        })
+          is_completed: nextStatus,
+        }),
       });
       if (!res.ok) {
-        // Revert on failure by refetching
-        fetchData();
-        alert('Error al guardar el estado en la base de datos (quizás la tabla no existe aún). Se descartaron los cambios manuales.');
-      } else {
-        // Confirm state is in sync with DB
-        fetchData();
+        await fetchData({ silent: true });
+        alert(
+          `${await readErrorMessage(res, 'Error al guardar el estado en la base de datos.')} Se descartaron los cambios manuales.`,
+        );
       }
     } catch (error) {
-       console.error(error);
-       fetchData();
+      console.error(error);
+      await fetchData({ silent: true });
+      alert('Error de red al guardar el estado. Se descartaron los cambios manuales.');
     }
   };
 
-  const getStudentStatus = (student: Student) => {
-    if (validations.length === 0) return false;
-    // Check if every validation exists and is completed
-    const completedIds = new Set(
-      student.validations.filter(v => v.is_completed).map(v => v.validation_id)
-    );
-    return validations.every(v => completedIds.has(v.id));
-  };
+  const sortedValidations = useMemo(
+    () => [...validations].sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })),
+    [validations],
+  );
 
-  const getStudentProgressPercent = (student: Student) => {
-    if (validations.length === 0) return 0;
-    const completedIds = new Set(
-      student.validations.filter(v => v.is_completed).map(v => v.validation_id)
-    );
-    const completedCount = validations.filter(v => completedIds.has(v.id)).length;
-    return Math.round((completedCount / validations.length) * 100);
-  };
+  // Cada estudiante solo cuenta las validaciones de su propia sede.
+  const progressByStudent = useMemo(() => {
+    const progress = new Map<Student, StudentProgress>();
+
+    for (const student of students) {
+      const applicable = validations.filter((validation) => isSameCampus(validation.campus, student.campus));
+      const completedIds = new Set(
+        student.validations.filter((v) => v.is_completed).map((v) => v.validation_id),
+      );
+      const completed = applicable.filter((validation) => completedIds.has(validation.id)).length;
+
+      progress.set(student, {
+        applicable: applicable.length,
+        completed,
+        percent: applicable.length > 0 ? Math.round((completed / applicable.length) * 100) : 0,
+        isCompleted: applicable.length > 0 && completed === applicable.length,
+      });
+    }
+
+    return progress;
+  }, [students, validations]);
 
   const filteredStudents = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
+    const term = normalizeSearchText(searchTerm);
     let source = !term
       ? students
       : students.filter((student) => {
-          const fullName = `${student.first_name} ${student.last_name}`.toLowerCase();
+          const fullName = normalizeSearchText(getStudentFullName(student));
           const doc = (student.document_number ?? '').toLowerCase();
           const email = (student.email ?? '').toLowerCase();
           return fullName.includes(term) || doc.includes(term) || email.includes(term);
         });
 
     if (statusFilter !== 'all') {
-      source = source.filter(s => {
-        const isCompleted = getStudentStatus(s);
+      source = source.filter((student) => {
+        const isCompleted = progressByStudent.get(student)?.isCompleted ?? false;
         return statusFilter === 'completed' ? isCompleted : !isCompleted;
       });
     }
-    
+
     return [...source].sort((a, b) => {
-      const aName = `${a.last_name} ${a.first_name}`.trim();
-      const bName = `${b.last_name} ${b.first_name}`.trim();
+      const aName = `${a.last_name ?? ''} ${a.first_name ?? ''}`.trim();
+      const bName = `${b.last_name ?? ''} ${b.first_name ?? ''}`.trim();
       return aName.localeCompare(bName, 'es', { sensitivity: 'base' });
     });
-  }, [students, searchTerm, statusFilter, validations]);
-
-  const sortedValidations = useMemo(() => {
-    return [...validations].sort((a, b) =>
-      a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }),
-    );
-  }, [validations]);
+  }, [students, searchTerm, statusFilter, progressByStudent]);
 
   const handleSearch = () => {
     setSearchTerm(searchInput);
   };
 
-  const handleOpenParticipantPanel = (email: string) => {
+  const handleOpenParticipantPanel = (email: string | null) => {
     if (!email) return;
-    router.push(`/?previewEmail=${encodeURIComponent(email)}`);
+    void router.push(`/?previewEmail=${encodeURIComponent(email)}`);
   };
 
   const handleDeleteValidation = async (validationId: number, validationName: string) => {
@@ -425,12 +535,14 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'No se pudo eliminar la validación' }));
-        alert(err.error || 'No se pudo eliminar la validación');
+        alert(await readErrorMessage(res, 'No se pudo eliminar la validación'));
         return;
       }
 
-      await fetchData();
+      if (scrapValidationId === validationId) {
+        setScrapValidationId('');
+      }
+      await fetchData({ silent: true });
     } catch (error) {
       console.error(error);
       alert('Error de red al eliminar la validación.');
@@ -439,12 +551,14 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
     }
   };
 
-  const columnCount = Math.max(6, sortedValidations.length + 4);
+  const placeholderColumns = Math.max(0, MIN_VALIDATION_COLUMNS - sortedValidations.length);
+  // Nombre + validaciones (o columnas vacías) + % avance + Cumple + Panel.
+  const columnCount = 1 + sortedValidations.length + placeholderColumns + 3;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 font-sans selection:bg-violet-500/30">
       <Head>
-        <title>Panel Sede {adminCampus} | ENEUN 2026</title>
+        <title>{`Panel Sede ${adminCampus} | ENEUN 2026`}</title>
       </Head>
 
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -464,6 +578,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
               Admin: {adminName.toLowerCase()}
             </div>
             <button
+              type="button"
               onClick={handleLogout}
               className="inline-flex items-center rounded-full border border-white/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-violet-200 transition hover:border-violet-300/60 hover:text-violet-100"
             >
@@ -508,26 +623,32 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
           <div className="mt-6 grid gap-4 lg:grid-cols-[1.4fr_1fr]">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-slate-400">Permitir usuario cuando esté cerrado</p>
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+              <form
+                className="mt-3 flex flex-col gap-3 sm:flex-row"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleSetUserFinalFormAccess(true);
+                }}
+              >
                 <input
                   type="email"
                   placeholder="correo@ejemplo.com"
+                  aria-label="Correo a habilitar"
                   value={finalFormEmail}
                   onChange={(e) => setFinalFormEmail(e.target.value)}
                   className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400"
                 />
                 <button
-                  type="button"
-                  onClick={() => handleSetUserFinalFormAccess(true)}
+                  type="submit"
                   disabled={finalFormLoading}
                   className="rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Habilitar correo
                 </button>
-              </div>
+              </form>
 
               {finalFormStatusMessage && (
-                <p className="mt-3 text-sm text-slate-300">{finalFormStatusMessage}</p>
+                <p role="status" className="mt-3 text-sm text-slate-300">{finalFormStatusMessage}</p>
               )}
             </div>
 
@@ -564,33 +685,59 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Gestión</p>
               <h2 className="mt-2 text-xl font-semibold text-white">Crear nueva validación</h2>
-              <p className="mt-1 text-sm text-slate-400">Puedes crear hasta 7 validaciones para marcar el cumplimiento de cada estudiante.</p>
+              <p className="mt-1 text-sm text-slate-400">
+                Puedes crear hasta {MAX_VALIDATIONS_PER_CAMPUS} validaciones{hasMultipleCampuses ? ' por sede' : ''} para marcar el cumplimiento de cada estudiante.
+              </p>
             </div>
-            <div className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl">
+            <form
+              className="flex w-full flex-col gap-3 sm:flex-row lg:max-w-2xl"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleCreateValidation();
+              }}
+            >
+              {hasMultipleCampuses && (
+                <select
+                  aria-label="Sede de la validación"
+                  value={newValCampus}
+                  onChange={(e) => setNewValCampus(e.target.value)}
+                  className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition focus:border-violet-400 sm:max-w-[200px]"
+                >
+                  <option value="">-- Sede --</option>
+                  {campusOptions.map((campus) => (
+                    <option key={normalizeCampusName(campus)} value={campus}>{campus}</option>
+                  ))}
+                </select>
+              )}
               <input
                 type="text"
                 placeholder="Nombre de validación..."
+                aria-label="Nombre de la validación"
                 value={newValName}
                 onChange={(e) => setNewValName(e.target.value)}
-                disabled={validations.length >= 7}
+                maxLength={120}
+                disabled={isValidationLimitReached}
                 className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <button
-                onClick={handleCreateValidation}
-                disabled={!newValName.trim() || validations.length >= 7}
+                type="submit"
+                disabled={!canCreateValidation}
                 className="rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Crear validación
+                {isCreatingValidation ? 'Creando...' : 'Crear validación'}
               </button>
-            </div>
+            </form>
           </div>
-          {validations.length >= 7 && (
-            <p className="mt-3 text-xs text-rose-300">Límite máximo de validaciones (7) alcanzado.</p>
+          {isValidationLimitReached && (
+            <p className="mt-3 text-xs text-rose-300">
+              Límite máximo de validaciones ({MAX_VALIDATIONS_PER_CAMPUS}) alcanzado{hasMultipleCampuses ? ' para esta sede' : ''}.
+            </p>
           )}
           <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
             <input
               type="text"
               placeholder="Buscar por nombre, documento o correo..."
+              aria-label="Buscar estudiantes"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onKeyDown={(e) => {
@@ -601,40 +748,39 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
               className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white placeholder-slate-500 outline-none transition focus:border-violet-400"
             />
             <button
-               onClick={handleSearch}
-               className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/15"
-             >
-               Buscar
-             </button>
+              type="button"
+              onClick={handleSearch}
+              className="rounded-2xl border border-white/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/15"
+            >
+              Buscar
+            </button>
 
-            <div className="flex rounded-2xl border border-slate-700 bg-slate-900/40 p-1 shadow-inner backdrop-blur-sm">
-               {[
-                 { id: 'all', label: 'Todos' },
-                 { id: 'completed', label: 'Cumple' },
-                 { id: 'pending', label: 'No Cumple' }
-               ].map((opt) => (
-                 <button
-                   key={opt.id}
-                   onClick={() => setStatusFilter(opt.id as any)}
-                   className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-xl transition duration-300 ${
-                     statusFilter === opt.id
-                       ? 'bg-violet-500/20 text-violet-200 border border-violet-400/30'
-                       : 'text-slate-500 hover:text-slate-300'
-                   }`}
-                 >
-                   {opt.label}
-                 </button>
-               ))}
-             </div>
+            <div className="flex rounded-2xl border border-slate-700 bg-slate-900/40 p-1 shadow-inner backdrop-blur-sm" role="group" aria-label="Filtrar por estado">
+              {STATUS_FILTER_OPTIONS.map((opt) => (
+                <button
+                  type="button"
+                  key={opt.id}
+                  onClick={() => setStatusFilter(opt.id)}
+                  aria-pressed={statusFilter === opt.id}
+                  className={`px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-xl transition duration-300 ${
+                    statusFilter === opt.id
+                      ? 'bg-violet-500/20 text-violet-200 border border-violet-400/30'
+                      : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
 
-             <p className="text-xs text-slate-400 sm:ml-auto">
+            <p className="text-xs text-slate-400 sm:ml-auto">
               Mostrando {filteredStudents.length} de {students.length}
             </p>
           </div>
         </section>
 
         {loading ? (
-          <div className="flex justify-center py-20">
+          <div className="flex justify-center py-20" role="status" aria-label="Cargando">
             <div className="h-9 w-9 animate-spin rounded-full border-4 border-slate-700 border-t-violet-400"></div>
           </div>
         ) : (
@@ -652,15 +798,19 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                           type="button"
                           onClick={() => handleDeleteValidation(val.id, val.name)}
                           disabled={deletingValidationId === val.id}
+                          aria-label={`Eliminar validación ${val.name}`}
                           className="rounded border border-rose-300/40 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-200 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           {deletingValidationId === val.id ? '...' : 'X'}
                         </button>
                       </div>
+                      {hasMultipleCampuses && val.campus && (
+                        <p className="mt-1 truncate text-[10px] font-normal normal-case tracking-normal text-slate-400">{val.campus}</p>
+                      )}
                     </th>
                   ))}
-                  {Array.from({ length: Math.max(0, 3 - sortedValidations.length) }).map((_, i) => (
-                     <th key={`empty-${i}`} className="border-b border-white/15 px-4 py-4 text-center text-transparent">V</th>
+                  {Array.from({ length: placeholderColumns }).map((_, i) => (
+                    <th key={`empty-${i}`} className="border-b border-white/15 px-4 py-4 text-center text-transparent">V</th>
                   ))}
                   <th className="w-28 border-b border-white/15 px-4 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">% avance</th>
                   <th className="w-36 border-b border-white/15 px-6 py-4 text-center text-xs font-semibold uppercase tracking-[0.16em] text-white">Cumple</th>
@@ -678,19 +828,32 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                   </tr>
                 ) : (
                   filteredStudents.map((student, idx) => {
-                    const isCumple = getStudentStatus(student);
-                    const progressPercent = getStudentProgressPercent(student);
+                    const progress = progressByStudent.get(student);
+                    const fullName = getStudentFullName(student);
                     return (
-                      <tr key={student.registration_id} className={`${idx % 2 === 0 ? 'bg-white/0' : 'bg-white/5'} transition-colors hover:bg-violet-500/10`}>
+                      <tr
+                        key={`${student.registration_id}-${student.campus ?? ''}`}
+                        className={`${idx % 2 === 0 ? 'bg-white/0' : 'bg-white/5'} transition-colors hover:bg-violet-500/10`}
+                      >
                         <td className="border-b border-white/10 px-6 py-5 font-semibold uppercase tracking-[0.08em] text-white">
-                          {student.first_name} {student.last_name}
+                          {fullName}
                           <p className="mt-1 normal-case tracking-normal text-xs text-slate-400">{student.document_number}</p>
+                          {hasMultipleCampuses && student.campus && (
+                            <p className="mt-0.5 normal-case tracking-normal text-[11px] text-slate-500">{student.campus}</p>
+                          )}
                         </td>
-                        
+
                         {sortedValidations.map((val) => {
-                          const studentVal = student.validations.find(v => v.validation_id === val.id);
-                          const isChecked = studentVal ? studentVal.is_completed : false;
-                          
+                          if (!isSameCampus(val.campus, student.campus)) {
+                            return (
+                              <td key={val.id} className="border-b border-white/10 px-4 py-4 text-center text-slate-600" title="Esta validación es de otra sede">
+                                —
+                              </td>
+                            );
+                          }
+
+                          const isChecked = student.validations.some((v) => v.validation_id === val.id && v.is_completed);
+
                           return (
                             <td key={val.id} className="border-b border-white/10 px-4 py-4 text-center">
                               <label className="inline-flex items-center cursor-pointer p-2">
@@ -698,9 +861,10 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={() => handleToggleValidation(student.registration_id, val.id, isChecked)}
+                                  aria-label={`${val.name}: ${fullName}`}
                                   className="peer sr-only"
                                 />
-                                <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border-2 border-violet-300/60 bg-slate-900 transition-all duration-200 peer-checked:border-violet-200 peer-checked:bg-violet-500/20">
+                                <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border-2 border-violet-300/60 bg-slate-900 transition-all duration-200 peer-checked:border-violet-200 peer-checked:bg-violet-500/20 peer-focus-visible:ring-2 peer-focus-visible:ring-violet-300">
                                   {isChecked && (
                                     <div className="absolute inset-1 rounded-sm bg-violet-300"></div>
                                   )}
@@ -710,21 +874,21 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                           );
                         })}
 
-                        {Array.from({ length: Math.max(0, 3 - sortedValidations.length) }).map((_, i) => (
-                           <td key={`empty-cell-${i}`} className="border-b border-white/10 px-4 py-4 text-center"></td>
+                        {Array.from({ length: placeholderColumns }).map((_, i) => (
+                          <td key={`empty-cell-${i}`} className="border-b border-white/10 px-4 py-4 text-center"></td>
                         ))}
 
                         <td className="border-b border-white/10 px-4 py-4 text-center">
                           <span className="inline-flex items-center rounded-full border border-violet-300/40 bg-violet-400/15 px-3 py-1 text-xs font-semibold text-violet-100">
-                            {progressPercent}%
+                            {progress?.percent ?? 0}%
                           </span>
                         </td>
-                        
+
                         <td className="border-b border-white/10 px-6 py-4 text-center">
-                          {validations.length > 0 && isCumple ? (
-                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-emerald-300/60 bg-emerald-400/50"></div>
+                          {progress?.isCompleted ? (
+                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-emerald-300/60 bg-emerald-400/50" aria-label="Cumple"></div>
                           ) : (
-                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-slate-500 bg-slate-900"></div>
+                            <div className="mx-auto h-6 w-14 rounded-md border-2 border-slate-500 bg-slate-900" aria-label="No cumple"></div>
                           )}
                         </td>
 
@@ -754,7 +918,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
             <div className="mb-6">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Herramienta</p>
               <h2 className="mt-2 flex items-center gap-2 text-xl font-semibold text-white">
-                <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-5 w-5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                 </svg>
                 Validación Masiva
@@ -769,6 +933,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                 <textarea
                   className="h-48 w-full resize-none rounded-2xl border border-slate-700 bg-slate-900/70 p-4 font-mono text-sm text-white placeholder-slate-600 outline-none transition focus:border-violet-400 disabled:opacity-50"
                   placeholder={"Ejemplo:\n12345678\njuan.perez@unal.edu.co\nJuan Pérez..."}
+                  aria-label="Datos para la validación masiva"
                   value={scrapText}
                   onChange={(e) => setScrapText(e.target.value)}
                   disabled={bulkLoading}
@@ -776,23 +941,27 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
               </div>
               <div className="flex flex-col gap-4">
                 <div>
-                  <label className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
+                  <label htmlFor="bulk-validation" className="mb-2 block text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">
                     Tipo de validación
                   </label>
                   <select
+                    id="bulk-validation"
                     className="w-full rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none transition focus:border-violet-400 disabled:opacity-50"
                     value={scrapValidationId}
-                    onChange={(e) => setScrapValidationId(Number(e.target.value))}
+                    onChange={(e) => setScrapValidationId(e.target.value ? Number(e.target.value) : '')}
                     disabled={bulkLoading}
                   >
                     <option value="">-- Seleccionar --</option>
-                    {validations.map((v) => (
-                      <option key={v.id} value={v.id}>{v.name}</option>
+                    {sortedValidations.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {hasMultipleCampuses && v.campus ? `${v.name} · ${v.campus}` : v.name}
+                      </option>
                     ))}
                   </select>
                 </div>
 
                 <button
+                  type="button"
                   onClick={handleBulkValidate}
                   disabled={bulkLoading || !scrapText.trim() || !scrapValidationId}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl border border-violet-300/30 bg-violet-400/20 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-violet-100 transition hover:bg-violet-400/35 disabled:cursor-not-allowed disabled:opacity-50"
@@ -808,7 +977,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                 </button>
 
                 {bulkResult && (
-                  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4">
+                  <div className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4" role="status">
                     <p className="text-sm font-semibold text-emerald-300">
                       ✓ {bulkResult.success} {bulkResult.success === 1 ? 'estudiante validado' : 'estudiantes validados'}
                     </p>
@@ -817,7 +986,7 @@ export default function SedeAdminPanel({ adminName, adminCampus, canManageFinalF
                         <p className="font-medium underline decoration-rose-400/50 underline-offset-2">
                           ⚠ {bulkResult.unmatched.length} líneas no coincidieron:
                         </p>
-                        <ul className="mt-1 max-h-32 overflow-y-auto space-y-0.5 pr-2 custom-scrollbar">
+                        <ul className="mt-1 max-h-32 overflow-y-auto space-y-0.5 pr-2">
                           {bulkResult.unmatched.slice(0, 50).map((line, idx) => (
                             <li key={idx} className="font-mono bg-rose-900/20 px-1 rounded truncate">
                               • {line}

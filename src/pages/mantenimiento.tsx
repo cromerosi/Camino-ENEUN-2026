@@ -11,12 +11,12 @@ export default function MantenimientoPage() {
 
         <section className="relative w-full max-w-2xl rounded-3xl border border-white/10 bg-slate-950/70 p-10 text-center shadow-[0_30px_90px_-45px_rgba(0,0,0,0.9)] backdrop-blur-2xl">
           <p className="text-xs uppercase tracking-[0.45em] text-amber-300">ENEUN 2026</p>
-          <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Pagina en mantenimiento</h1>
+          <h1 className="mt-5 text-4xl font-semibold text-white sm:text-5xl">Página en mantenimiento</h1>
           <p className="mx-auto mt-6 max-w-xl text-base text-slate-300">
-            Estamos realizando ajustes para mejorar la plataforma por parte del equipo de TI. El acceso esta temporalmente deshabilitado para participantes y administradores.
+            Estamos realizando ajustes para mejorar la plataforma por parte del equipo de TI. El acceso está temporalmente deshabilitado para participantes y administradores.
           </p>
           <p className="mx-auto mt-4 max-w-xl text-sm uppercase tracking-[0.2em] text-slate-500">
-            Intenta nuevamente mas tarde y consulta con tus representantes.
+            Intenta nuevamente más tarde y consulta con tus representantes.
           </p>
         </section>
       </main>

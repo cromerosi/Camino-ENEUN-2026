@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
   ConfirmationFormData,
+  ConfirmationFormErrors,
   ConfirmationFormProps,
   ConfirmationHealthConditionCode,
+  ConfirmationTransport,
 } from '../types/confirmation';
 
 import {
+  CAMPING_LODGING_ADDRESS,
+  CAMPING_LODGING_CHOICE,
   confirmationBloodTypes,
+  confirmationHealthDetailQuestions,
   confirmationHealthOptions,
   confirmationLodgingOptions,
   confirmationPronounOptions,
   confirmationRelationshipOptions,
+  confirmationTransportOptions,
 } from '../constants/confirmationCatalogs';
 
 import {
@@ -40,9 +46,7 @@ export function ConfirmationAttendeeForm({
     createConfirmationInitialData(prefill, initialData)
   );
 
-  const [errors, setErrors] = useState<
-    Partial<Record<keyof ConfirmationFormData, string>>
-  >({});
+  const [errors, setErrors] = useState<ConfirmationFormErrors>({});
   const [submitError, setSubmitError] = useState<string>('');
   const [submitValidationMessage, setSubmitValidationMessage] = useState<string>('');
 
@@ -119,8 +123,8 @@ export function ConfirmationAttendeeForm({
       return 'Sin seleccionar';
     }
 
-    if (form.lodgingChoice === 'Planea Acampar') {
-      return 'UNAL, Campus La Nubia';
+    if (form.lodgingChoice === CAMPING_LODGING_CHOICE) {
+      return CAMPING_LODGING_ADDRESS;
     }
 
     return form.lodgingAddress.trim() || 'No registrada';
@@ -140,7 +144,7 @@ export function ConfirmationAttendeeForm({
       return '';
     }
 
-    return 'El equipo de T.I (Tecnologia, e Informacion - ENEUN 2026) te recomienda cambiar este nombre por uno mas corto para la escarapela.';
+    return 'El equipo de T.I. (Tecnología e Información - ENEUN 2026) te recomienda cambiar este nombre por uno más corto para la escarapela.';
   }, [form.badgeName]);
 
   function updateField<K extends keyof ConfirmationFormData>(
@@ -168,30 +172,22 @@ export function ConfirmationAttendeeForm({
     setSubmitError('');
     setSubmitValidationMessage('');
 
+    const trimmedHealthDetails = Object.fromEntries(
+      confirmationHealthDetailQuestions.map((question) => [question.field, form[question.field].trim()])
+    );
+
     const cleanedForm = clearUnusedHealthDetailFields({
       ...form,
+      ...trimmedHealthDetails,
       id: form.id.trim(),
       badgeName: form.badgeName.trim(),
       sede: form.sede.trim(),
       pronounOther: form.pronounOther.trim(),
-      allergiesDetail: form.allergiesDetail.trim(),
-      asthmaDetail: form.asthmaDetail.trim(),
-      diabetesDetail: form.diabetesDetail.trim(),
-      nonNeurotypicalDetail: form.nonNeurotypicalDetail.trim(),
-      epilepsyDetail: form.epilepsyDetail.trim(),
-      hypertensionDetail: form.hypertensionDetail.trim(),
-      cardiacConditionsDetail: form.cardiacConditionsDetail.trim(),
-      reducedMobilityDetail: form.reducedMobilityDetail.trim(),
-      visualDisabilityDetail: form.visualDisabilityDetail.trim(),
-      hearingDisabilityDetail: form.hearingDisabilityDetail.trim(),
-      permanentMedicationDetail: form.permanentMedicationDetail.trim(),
-      psychosocialDisabilityDetail: form.psychosocialDisabilityDetail.trim(),
-      otherHealthConditionDetail: form.otherHealthConditionDetail.trim(),
+      epsId: form.epsId.trim(),
       emergencyContactName: form.emergencyContactName.trim(),
       emergencyContactRelationship: form.emergencyContactRelationship.trim(),
       emergencyContactPhone: form.emergencyContactPhone.trim(),
       lodgingAddress: form.lodgingAddress.trim(),
-      transport: form.transport,
     });
 
     const nextErrors = validateConfirmationForm(cleanedForm);
@@ -303,152 +299,19 @@ export function ConfirmationAttendeeForm({
           </div>
         </div>
 
-        {form.healthConditionCodes.includes('ALLERGIES') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste alergias, indícanos cuáles debemos tener en cuenta"
-            value={form.allergiesDetail}
-            onChange={(value) => updateField('allergiesDetail', value)}
-            required
-            error={errors.allergiesDetail}
-            placeholder="Ej. Penicilina, frutos secos, picaduras, etc."
-          />
-        )}
-
-        {form.healthConditionCodes.includes('ASTHMA') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste asma, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.asthmaDetail}
-            onChange={(value) => updateField('asthmaDetail', value)}
-            required
-            error={errors.asthmaDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('DIABETES') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste diabetes, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.diabetesDetail}
-            onChange={(value) => updateField('diabetesDetail', value)}
-            required
-            error={errors.diabetesDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('NON_NEUROTYPICAL') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste no neurotipico, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.nonNeurotypicalDetail}
-            onChange={(value) => updateField('nonNeurotypicalDetail', value)}
-            required
-            error={errors.nonNeurotypicalDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('EPILEPSY') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste epilepsia o antecedentes convulsivos, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.epilepsyDetail}
-            onChange={(value) => updateField('epilepsyDetail', value)}
-            required
-            error={errors.epilepsyDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('HYPERTENSION') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste hipertensión, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.hypertensionDetail}
-            onChange={(value) => updateField('hypertensionDetail', value)}
-            required
-            error={errors.hypertensionDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('CARDIAC') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste condiciones cardíacas, ¿cuáles deseas reportar?"
-            value={form.cardiacConditionsDetail}
-            onChange={(value) => updateField('cardiacConditionsDetail', value)}
-            required
-            error={errors.cardiacConditionsDetail}
-            placeholder="Describe brevemente la condición o indicaciones relevantes"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('REDUCED_MOBILITY') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste movilidad reducida, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.reducedMobilityDetail}
-            onChange={(value) => updateField('reducedMobilityDetail', value)}
-            required
-            error={errors.reducedMobilityDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('VISUAL_DISABILITY') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste discapacidad visual, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.visualDisabilityDetail}
-            onChange={(value) => updateField('visualDisabilityDetail', value)}
-            required
-            error={errors.visualDisabilityDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('HEARING_DISABILITY') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste discapacidad auditiva, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.hearingDisabilityDetail}
-            onChange={(value) => updateField('hearingDisabilityDetail', value)}
-            required
-            error={errors.hearingDisabilityDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('PERMANENT_MEDICATION') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste medicación permanente, indícanos cuál medicamento tomas y para qué"
-            value={form.permanentMedicationDetail}
-            onChange={(value) =>
-              updateField('permanentMedicationDetail', value)
-            }
-            required
-            error={errors.permanentMedicationDetail}
-            placeholder="Ej. Losartán 50 mg para hipertensión"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('PSYCHOSOCIAL_DISABILITY') && (
-          <ConfirmationTextarea
-            label="Si seleccionaste discapacidad psicosocial, ¿qué ajuste o consideración debemos tener en cuenta?"
-            value={form.psychosocialDisabilityDetail}
-            onChange={(value) => updateField('psychosocialDisabilityDetail', value)}
-            required
-            error={errors.psychosocialDisabilityDetail}
-            placeholder="Describe brevemente la información que quieras compartir"
-          />
-        )}
-
-        {form.healthConditionCodes.includes('OTHER') && (
-          <ConfirmationTextarea
-            label="Indica cuál otra condición deseas reportar"
-            value={form.otherHealthConditionDetail}
-            onChange={(value) =>
-              updateField('otherHealthConditionDetail', value)
-            }
-            required
-            error={errors.otherHealthConditionDetail}
-            placeholder="Escribe aquí la condición"
-          />
-        )}
+        {confirmationHealthDetailQuestions
+          .filter((question) => form.healthConditionCodes.includes(question.code))
+          .map((question) => (
+            <ConfirmationTextarea
+              key={question.field}
+              label={question.label}
+              value={form[question.field]}
+              onChange={(value) => updateField(question.field, value)}
+              required
+              error={errors[question.field]}
+              placeholder={question.placeholder}
+            />
+          ))}
 
         <div className="grid gap-5 md:grid-cols-2">
           <ConfirmationSelect
@@ -554,6 +417,9 @@ export function ConfirmationAttendeeForm({
           required
           error={errors.emergencyContactPhone}
           placeholder="Ej. 3001234567"
+          type="tel"
+          inputMode="tel"
+          autoComplete="off"
         />
       </ConfirmationSection>
 
@@ -566,8 +432,11 @@ export function ConfirmationAttendeeForm({
           value={form.lodgingChoice}
           onChange={(value) => {
             updateField('lodgingChoice', value);
-            if (value === 'Planea Acampar') {
-              updateField('lodgingAddress', 'UNAL, Campus La Nubia');
+            if (value === CAMPING_LODGING_CHOICE) {
+              updateField('lodgingAddress', CAMPING_LODGING_ADDRESS);
+            } else if (form.lodgingAddress === CAMPING_LODGING_ADDRESS) {
+              // Al dejar de acampar se limpia la dirección asignada automáticamente.
+              updateField('lodgingAddress', '');
             }
           }}
           options={confirmationLodgingOptions}
@@ -575,7 +444,7 @@ export function ConfirmationAttendeeForm({
           error={errors.lodgingChoice}
         />
 
-        {form.lodgingChoice !== '' && form.lodgingChoice !== 'Planea Acampar' && (
+        {form.lodgingChoice !== '' && form.lodgingChoice !== CAMPING_LODGING_CHOICE && (
           <ConfirmationTextInput
             label="Dirección del alojamiento (opcional, pero recomendada en caso de emergencia)"
             value={form.lodgingAddress}
@@ -584,10 +453,10 @@ export function ConfirmationAttendeeForm({
           />
         )}
 
-        {form.lodgingChoice === 'Planea Acampar' && (
+        {form.lodgingChoice === CAMPING_LODGING_CHOICE && (
           <ConfirmationTextInput
             label="Dirección del alojamiento"
-            value="UNAL, Campus La Nubia"
+            value={CAMPING_LODGING_ADDRESS}
             onChange={() => undefined}
             disabled
           />
@@ -605,21 +474,8 @@ export function ConfirmationAttendeeForm({
         <ConfirmationSelect
           label="Transporte"
           value={form.transport}
-          onChange={(value) =>
-            updateField('transport', value as '' | 'SI' | 'PROPIOS_MEDIOS')
-          }
-          options={[
-            {
-              value: 'SI',
-              label:
-                'Sí, me comprometo a hacer uso responsable del transporte, recursos y/o medios suministrados por la universidad',
-            },
-            {
-              value: 'PROPIOS_MEDIOS',
-              label:
-                'No, me comprometo a movilizarme por medio de mis propios recursos',
-            },
-          ]}
+          onChange={(value) => updateField('transport', value as ConfirmationTransport)}
+          options={[...confirmationTransportOptions]}
           required
           error={errors.transport}
           placeholder="Selecciona una opción"

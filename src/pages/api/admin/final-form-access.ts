@@ -1,9 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import {
-  getAdminSessionCookieName,
-  isSupremeAdminSession,
-  verifyAdminSessionToken,
-} from '../../../lib/admin-auth';
+import { isSupremeAdminSession } from '../../../lib/admin-auth';
+import { methodNotAllowed, requireAdminSession } from '../../../lib/admin-api';
 import {
   getFinalFormAccessForEmail,
   getFinalFormGlobalState,
@@ -11,21 +8,17 @@ import {
   setFinalFormGlobalState,
   setFinalFormUserAccess,
 } from '../../../lib/final-form-access';
+import { getQueryValue, isPlainObject } from '../../../lib/http';
+
+const ALLOWED_USERS_LIMIT = 150;
 
 function normalizeEmail(email: unknown): string {
-  if (typeof email !== 'string') {
-    return '';
-  }
-  return email.trim().toLowerCase();
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const token = req.cookies[getAdminSessionCookieName()];
-  const session = await verifyAdminSessionToken(token);
-
-  if (!session) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+  const session = await requireAdminSession(req, res);
+  if (!session) return;
 
   if (!isSupremeAdminSession(session)) {
     return res.status(403).json({ error: 'Solo el usuario Admin SUPREMO puede gestionar este control.' });
@@ -33,10 +26,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === 'GET') {
     try {
-      const checkEmail = normalizeEmail(req.query.email);
-      const isOpen = await getFinalFormGlobalState();
-      const access = checkEmail ? await getFinalFormAccessForEmail(checkEmail) : null;
-      const allowedUsers = await listFinalFormAllowedUsers(150);
+      const checkEmail = normalizeEmail(getQueryValue(req.query.email));
+      const [isOpen, access, allowedUsers] = await Promise.all([
+        getFinalFormGlobalState(),
+        checkEmail ? getFinalFormAccessForEmail(checkEmail) : Promise.resolve(null),
+        listFinalFormAllowedUsers(ALLOWED_USERS_LIMIT),
+      ]);
 
       return res.status(200).json({
         isOpen,
@@ -57,35 +52,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === 'POST') {
     try {
-      const { isOpen, email, allow } = req.body as {
-        isOpen?: boolean;
-        email?: string;
-        allow?: boolean;
-      };
+      const body = isPlainObject(req.body) ? req.body : {};
 
-      if (typeof isOpen === 'boolean') {
-        await setFinalFormGlobalState(isOpen);
+      if (typeof body.isOpen === 'boolean') {
+        await setFinalFormGlobalState(body.isOpen);
       }
 
-      const normalizedEmail = normalizeEmail(email);
-      if (normalizedEmail && typeof allow === 'boolean') {
-        await setFinalFormUserAccess(normalizedEmail, allow);
+      const email = normalizeEmail(body.email);
+      if (email && typeof body.allow === 'boolean') {
+        await setFinalFormUserAccess(email, body.allow);
       }
 
-      const refreshedIsOpen = await getFinalFormGlobalState();
-      const allowedUsers = await listFinalFormAllowedUsers(150);
+      const [isOpen, allowedUsers] = await Promise.all([
+        getFinalFormGlobalState(),
+        listFinalFormAllowedUsers(ALLOWED_USERS_LIMIT),
+      ]);
 
-      return res.status(200).json({
-        success: true,
-        isOpen: refreshedIsOpen,
-        allowedUsers,
-      });
+      return res.status(200).json({ success: true, isOpen, allowedUsers });
     } catch (error) {
       console.error('Error updating final form access settings:', error);
       return res.status(500).json({ error: 'No se pudo actualizar la configuración' });
     }
   }
 
-  res.setHeader('Allow', 'GET, POST');
-  return res.status(405).json({ error: 'Method Not Allowed' });
+  return methodNotAllowed(res, ['GET', 'POST']);
 }

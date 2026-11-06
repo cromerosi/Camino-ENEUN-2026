@@ -1,14 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import {
-  getSessionCookieName,
-} from '../../../lib/auth';
+import { getSessionCookieName } from '../../../lib/auth';
+import { buildExpiredCookie, redirectTo, setNoStore } from '../../../lib/http';
 
 export default function handler(_req: NextApiRequest, res: NextApiResponse) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  res.setHeader(
-    'Set-Cookie',
-    `${getSessionCookieName()}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`,
-  );
-  res.writeHead(303, { Location: '/landing' });
-  res.end();
+  setNoStore(res);
+  res.setHeader('Set-Cookie', buildExpiredCookie(getSessionCookieName()));
+  redirectTo(res, '/landing');
 }

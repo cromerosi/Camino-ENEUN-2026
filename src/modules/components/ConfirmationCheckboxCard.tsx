@@ -13,6 +13,7 @@ export function ConfirmationCheckboxCard({
     <button
       type="button"
       onClick={onToggle}
+      aria-pressed={checked}
       className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-left transition ${
         checked
           ? 'border-fuchsia-300/60 bg-fuchsia-500/15'

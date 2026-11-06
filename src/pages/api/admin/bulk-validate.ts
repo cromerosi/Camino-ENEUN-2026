@@ -1,41 +1,50 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSql } from '../../../lib/db';
-import {
-  getAdminSessionCookieName,
-  hasCampusAccess,
-  verifyAdminSessionToken,
-} from '../../../lib/admin-auth';
+import { hasCampusAccess } from '../../../lib/admin-auth';
+import { methodNotAllowed, requireAdminSession } from '../../../lib/admin-api';
+import { isPlainObject, parsePositiveInteger } from '../../../lib/http';
+
+const MAX_BULK_SIZE = 5000;
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    return res.status(405).json({ error: 'Method Not Allowed' });
+    return methodNotAllowed(res, ['POST']);
   }
 
-  const token = req.cookies[getAdminSessionCookieName()];
-  const session = await verifyAdminSessionToken(token);
+  const session = await requireAdminSession(req, res);
+  if (!session) return;
 
-  if (!session) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+  const body = isPlainObject(req.body) ? req.body : {};
+  const validationId = parsePositiveInteger(body.validation_id);
+  const isCompleted = body.is_completed;
 
-  const { registration_ids, validation_id, is_completed } = req.body;
-
-  if (!Array.isArray(registration_ids) || !validation_id || is_completed === undefined) {
+  if (!Array.isArray(body.registration_ids) || !validationId || typeof isCompleted !== 'boolean') {
     return res.status(400).json({ error: 'Faltan parámetros' });
   }
 
-  if (registration_ids.length === 0) {
+  const registrationIds = Array.from(
+    new Set(
+      body.registration_ids
+        .map((value) => parsePositiveInteger(value))
+        .filter((value): value is number => value !== null),
+    ),
+  );
+
+  if (registrationIds.length === 0) {
     return res.status(200).json({ success: true, count: 0 });
+  }
+
+  if (registrationIds.length > MAX_BULK_SIZE) {
+    return res.status(400).json({ error: `Máximo ${MAX_BULK_SIZE} estudiantes por operación` });
   }
 
   const sql = getSql();
 
   try {
-    // Fetch validation's campus to verify admin has access
-    const validationRows = await sql`
-      SELECT campus FROM sede_validations WHERE id = ${validation_id} LIMIT 1
-    `;
+    // Se verifica que el admin tenga acceso a la sede de la validación.
+    const validationRows = (await sql`
+      SELECT campus FROM sede_validations WHERE id = ${validationId} LIMIT 1
+    `) as Array<{ campus: string | null }>;
 
     if (validationRows.length === 0) {
       return res.status(400).json({ error: 'Validación no encontrada' });
@@ -46,29 +55,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({ error: 'Sin permisos para modificar esta sede' });
     }
 
-    // Verify all registration_ids belong to this campus
-    const studentRows = await sql`
-      SELECT r.id
+    // Solo se actualizan los estudiantes que pertenecen a la sede de la validación.
+    const studentRows = (await sql`
+      SELECT DISTINCT r.id
       FROM registrations r
       JOIN confirmation_submissions c ON c.registration_id = r.id
-      WHERE r.id = ANY(${registration_ids}::int[])
+      WHERE r.id = ANY(${registrationIds}::int[])
         AND (
-          c.campus = ${targetCampus} 
-          OR translate(LOWER(c.campus), 'áéíóú', 'aeiou') = translate(LOWER(${targetCampus}), 'áéíóú', 'aeiou')
+          c.campus = ${targetCampus}
+          OR translate(lower(trim(c.campus)), 'áéíóúü', 'aeiouu') = translate(lower(trim(${targetCampus})), 'áéíóúü', 'aeiouu')
         )
-    `;
+    `) as Array<{ id: number }>;
 
-    const allowedIds = (studentRows as unknown as { id: number }[]).map((r) => r.id);
+    const allowedIds = studentRows.map((row) => row.id);
 
     if (allowedIds.length === 0) {
       return res.status(400).json({ error: 'Ningún estudiante pertenece a esta sede' });
     }
 
-    // Bulk upsert
-    const insertData = allowedIds.map((id: number) => ({
+    const insertData = allowedIds.map((id) => ({
       registration_id: id,
-      validation_id: Number(validation_id),
-      is_completed: Boolean(is_completed),
+      validation_id: validationId,
+      is_completed: isCompleted,
     }));
 
     await sql`

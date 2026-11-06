@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSessionCookieName, verifySignedSessionToken } from '../../lib/auth';
+import { setNoStore } from '../../lib/http';
 import { getJourneyStepsByEmail } from '../../lib/participant';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -8,19 +9,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  try {
-    const sessionToken = req.cookies[getSessionCookieName()];
-    const authUser = await verifySignedSessionToken(sessionToken);
+  setNoStore(res);
 
+  try {
+    const authUser = await verifySignedSessionToken(req.cookies[getSessionCookieName()]);
     if (!authUser?.email) {
       return res.status(401).json({ error: 'No autorizado' });
     }
 
     const journeySteps = await getJourneyStepsByEmail(authUser.email);
-    
-    return res.status(200).json({ 
+
+    return res.status(200).json({
       journeySteps,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error in /api/journey-status:', error);

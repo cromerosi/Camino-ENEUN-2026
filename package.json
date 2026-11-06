@@ -9,7 +9,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.94.5",
@@ -17,7 +18,8 @@
     "postgres": "^3.4.8",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwindcss": "^4.2.1"
+    "tailwindcss": "^4.2.1",
+    "vercel": "^50.37.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.1",

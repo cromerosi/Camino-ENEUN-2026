@@ -1,14 +1,35 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { getSql } from '../../../lib/db';
+import { buildCookie, isPlainObject, setNoStore } from '../../../lib/http';
 import {
+  ADMIN_SESSION_MAX_AGE_SECONDS,
   createAdminSessionToken,
   getAdminSessionCookieName,
+  resolveAdminCampusLabel,
   resolveAdminCampuses,
 } from '../../../lib/admin-auth';
 
-function buildCookie(name: string, value: string, maxAgeSeconds: number): string {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}${secure}`;
+interface AdminRow {
+  id: number;
+  username: string;
+  name: string | null;
+  password: string | null;
+  campus: unknown;
+  is_super: boolean | null;
+  is_global: boolean | null;
+  assigned_campuses: unknown;
+}
+
+/** Comparación en tiempo constante para no filtrar información por tiempos de respuesta. */
+function safeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const left = encoder.encode(a);
+  const right = encoder.encode(b);
+  let diff = left.length ^ right.length;
+  for (let i = 0; i < Math.max(left.length, right.length); i += 1) {
+    diff |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  }
+  return diff === 0;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -17,53 +38,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  const { username, password } = req.body;
-  
+  setNoStore(res);
+
+  const body = isPlainObject(req.body) ? req.body : {};
+  const username = typeof body.username === 'string' ? body.username : '';
+  const password = typeof body.password === 'string' ? body.password : '';
+
   if (!username || !password) {
     return res.status(400).json({ error: 'Faltan credenciales' });
   }
 
   try {
     const sql = getSql();
-    // Use md5 or direct comparison based on how passwords were historically populated. Usually plaintext or postgres md5 depending on setup.
-    // For this simple implementation we'll match it directly.
-    const admins = await sql`
+    // Las contraseñas se guardan en texto plano en la tabla admins (ver README).
+    const admins = (await sql`
       SELECT id, username, name, password, campus, is_super, is_global, assigned_campuses
       FROM admins
       WHERE username = ${username}
-    `;
-
-    if (admins.length === 0) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
-    }
+      LIMIT 1
+    `) as AdminRow[];
 
     const admin = admins[0];
-    
-    // Simple verification (update if the DB uses hashes like bcrypt or md5)
-    if (admin.password !== password) {
-       return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!admin || typeof admin.password !== 'string' || !safeEqual(admin.password, password)) {
+      return res.status(401).json({ error: 'Credenciales inválidas' });
     }
 
     const isSuper = Boolean(admin.is_super);
     const isGlobal = Boolean(admin.is_global);
-    const normalizedCampuses = resolveAdminCampuses(admin.campus, admin.assigned_campuses);
-    const campusLabel = isSuper || isGlobal
-      ? 'Global'
-      : normalizedCampuses.length > 1
-        ? 'Multisede'
-        : admin.campus || 'Sin sede';
 
     const token = await createAdminSessionToken({
       id: admin.id,
       username: admin.username,
-      name: admin.name,
-      campus: campusLabel,
-      campuses: normalizedCampuses,
+      name: admin.name ?? '',
+      campus: resolveAdminCampusLabel(admin.campus, admin.assigned_campuses, { isSuper, isGlobal }),
+      campuses: resolveAdminCampuses(admin.campus, admin.assigned_campuses),
       isSuper,
       isGlobal,
     });
 
-    res.setHeader('Set-Cookie', buildCookie(getAdminSessionCookieName(), token, 60 * 60 * 8));
+    res.setHeader('Set-Cookie', buildCookie(getAdminSessionCookieName(), token, ADMIN_SESSION_MAX_AGE_SECONDS));
     return res.status(200).json({ success: true });
   } catch (error) {
     console.error('Admin login error', error);

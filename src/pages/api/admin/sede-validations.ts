@@ -1,54 +1,56 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { getSql } from '../../../lib/db';
-import { getAdminSessionCookieName, hasCampusAccess, verifyAdminSessionToken } from '../../../lib/admin-auth';
+import { getSql, withTransaction } from '../../../lib/db';
+import { hasCampusAccess, hasMultipleCampusScope } from '../../../lib/admin-auth';
+import { methodNotAllowed, requireAdminSession } from '../../../lib/admin-api';
+import { getQueryValue, isPlainObject, parsePositiveInteger } from '../../../lib/http';
 
-function getCampusFromQuery(queryCampus: string | string[] | undefined): string | null {
-  const value = Array.isArray(queryCampus) ? queryCampus[0] : queryCampus;
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+const MAX_VALIDATIONS_PER_CAMPUS = 7;
+const MAX_VALIDATION_NAME_LENGTH = 120;
+
+interface ValidationRow {
+  id: number;
+  campus: string | null;
+  name: string;
+  created_at: string | Date;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const token = req.cookies[getAdminSessionCookieName()];
-  const session = await verifyAdminSessionToken(token);
-  
-  if (!session) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
+  const session = await requireAdminSession(req, res);
+  if (!session) return;
 
   const sql = getSql();
-  const requestedCampus = getCampusFromQuery(req.query.campus);
 
   if (req.method === 'GET') {
     try {
-      const validations = await sql`
+      const validations = (await sql`
         SELECT id, campus, name, created_at
         FROM sede_validations
         ORDER BY created_at ASC
-      `;
+      `) as ValidationRow[];
 
-      const filtered = validations.filter((validation) => {
-        const validationCampus = String((validation as { campus?: unknown }).campus ?? '');
-        return hasCampusAccess(session, validationCampus);
-      });
-
+      const filtered = validations.filter((validation) => hasCampusAccess(session, validation.campus));
       return res.status(200).json({ validations: filtered });
     } catch (error) {
-       console.error('Error fetching sede_validations (table might not exist):', error);
-       return res.status(200).json({ validations: [], error: 'Table may not exist yet' });
+      console.error('Error fetching sede_validations (table might not exist):', error);
+      return res.status(200).json({ validations: [], error: 'Table may not exist yet' });
     }
   }
 
   if (req.method === 'POST') {
-    const { name } = req.body;
-    if (!name || name.trim() === '') {
+    const body = isPlainObject(req.body) ? req.body : {};
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) {
       return res.status(400).json({ error: 'El nombre es requerido' });
     }
+    if (name.length > MAX_VALIDATION_NAME_LENGTH) {
+      return res.status(400).json({ error: `El nombre no puede superar ${MAX_VALIDATION_NAME_LENGTH} caracteres` });
+    }
 
-    const targetCampus = requestedCampus ?? session.campus;
+    // Los admins de una sola sede crean en su sede; los multisede/globales deben indicarla.
+    const requestedCampus = getQueryValue(req.query.campus);
+    const targetCampus = requestedCampus || (hasMultipleCampusScope(session) ? '' : session.campus);
     if (!targetCampus) {
-      return res.status(400).json({ error: 'La sede objetivo es requerida' });
+      return res.status(400).json({ error: 'Selecciona la sede de la validación' });
     }
 
     if (!hasCampusAccess(session, targetCampus)) {
@@ -56,22 +58,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     try {
-      const countRes = await sql`
-        SELECT count(*) as count
+      const countRows = (await sql`
+        SELECT count(*)::int AS count
         FROM sede_validations
-        WHERE campus = ${targetCampus}
-      `;
-      const currentCount = parseInt(countRes[0].count, 10);
-      if (currentCount >= 7) {
-        return res.status(400).json({ error: 'Límite de 7 validaciones alcanzado' });
+        WHERE translate(lower(trim(campus)), 'áéíóúü', 'aeiouu')
+          = translate(lower(trim(${targetCampus})), 'áéíóúü', 'aeiouu')
+      `) as Array<{ count: number }>;
+
+      if (Number(countRows[0]?.count ?? 0) >= MAX_VALIDATIONS_PER_CAMPUS) {
+        return res.status(400).json({ error: `Límite de ${MAX_VALIDATIONS_PER_CAMPUS} validaciones alcanzado` });
       }
 
-      const inserted = await sql`
+      const inserted = (await sql`
         INSERT INTO sede_validations (campus, name)
-        VALUES (${targetCampus}, ${name.trim()})
-        RETURNING id, name, created_at
-      `;
-      
+        VALUES (${targetCampus}, ${name})
+        RETURNING id, campus, name, created_at
+      `) as ValidationRow[];
+
       return res.status(201).json({ validation: inserted[0] });
     } catch (error) {
       console.error('Error inserting sede_validation:', error);
@@ -80,43 +83,38 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   if (req.method === 'DELETE') {
-    const rawId = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
-    const validationId = Number(rawId);
-
-    if (!Number.isInteger(validationId) || validationId <= 0) {
+    const validationId = parsePositiveInteger(getQueryValue(req.query.id));
+    if (!validationId) {
       return res.status(400).json({ error: 'ID de validación inválido' });
     }
 
     try {
-      const existing = await sql`
+      const existing = (await sql`
         SELECT id, campus
         FROM sede_validations
         WHERE id = ${validationId}
         LIMIT 1
-      `;
+      `) as Array<{ id: number; campus: string | null }>;
 
       if (existing.length === 0) {
         return res.status(404).json({ error: 'Validación no encontrada' });
       }
 
-      const validationCampus = String(existing[0].campus ?? '');
-      if (!hasCampusAccess(session, validationCampus)) {
+      if (!hasCampusAccess(session, existing[0].campus)) {
         return res.status(403).json({ error: 'Sin permisos para eliminar esta validación' });
       }
 
-      await sql`
-        DELETE FROM student_sede_validations
-        WHERE validation_id = ${validationId}
-      `;
-
-      await sql`
-        DELETE FROM sede_validations
-        WHERE id = ${validationId}
-          AND (
-            campus = ${session.campus}
-            OR translate(LOWER(campus), 'áéíóú', 'aeiou') = translate(LOWER(${session.campus ?? ''}), 'áéíóú', 'aeiou')
-          )
-      `;
+      // En una transacción para no dejar estados huérfanos si algo falla.
+      await withTransaction(async (tx) => {
+        await tx`
+          DELETE FROM student_sede_validations
+          WHERE validation_id = ${validationId}
+        `;
+        await tx`
+          DELETE FROM sede_validations
+          WHERE id = ${validationId}
+        `;
+      });
 
       return res.status(200).json({ success: true });
     } catch (error) {
@@ -125,6 +123,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
   }
 
-  res.setHeader('Allow', 'GET, POST, DELETE');
-  return res.status(405).json({ error: 'Method Not Allowed' });
+  return methodNotAllowed(res, ['GET', 'POST', 'DELETE']);
 }

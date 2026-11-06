@@ -49,8 +49,11 @@ npm run dev
 Variables mínimas recomendadas:
 
 ```env
-# Base de datos
+# Base de datos principal
 DATABASE_URL=postgres://usuario:password@host:5432/db
+
+# Base de datos de la plataforma de capacitaciones (tabla student_capacitaciones)
+TRAINING_DATABASE_URL=postgres://usuario:password@host/db?sslmode=require
 
 # Auth0 (estudiantes)
 AUTH0_DOMAIN=tu-tenant.us.auth0.com
@@ -69,7 +72,9 @@ ADMIN_JWT_SECRET=clave-opcional
 Notas:
 
 - `AUTH0_CLIENT_SECRET` puede omitirse si se usa flujo PKCE correctamente configurado.
-- Si no defines `AUTH_SESSION_SECRET`, el proyecto usa un valor de desarrollo (no recomendado para producción).
+- Si no defines `AUTH_SESSION_SECRET`, el proyecto usa un valor de desarrollo **inseguro** (cualquiera podría falsificar sesiones). En producción debe estar definido; si falta, el servidor lo reporta en los logs.
+- `TRAINING_DATABASE_URL` es obligatoria para mostrar el estado del paso "Capacitaciones de la plataforma". Si falta, ese paso aparece siempre "en curso".
+- Opcional: `FINAL_FORM_URL` para enlazar un formulario final externo en lugar de `/formulario-final`.
 
 ## Scripts
 
@@ -78,6 +83,7 @@ npm run dev    # entorno local
 npm run build  # build producción
 npm run start  # servidor producción
 npm run lint   # lint (Next)
+npm run typecheck  # verificación de tipos con TypeScript
 ```
 
 ## Arquitectura del proyecto
@@ -85,6 +91,12 @@ npm run lint   # lint (Next)
 ```text
 src/
 	lib/                 # Auth, DB, lógica de negocio y agregaciones
+		db.ts              # Conexiones a la BD principal y a la de capacitaciones
+		session-token.ts   # Firma/verificación HMAC de cookies de sesión
+		auth.ts            # Sesión de estudiante y flujo Auth0
+		admin-auth.ts      # Sesión de admin y permisos por sede
+		campus.ts          # Normalización de nombres de sede
+		participant.ts     # Datos del participante y "Camino ENEUN"
 	middleware.ts        # Protección de rutas por sesión
 	modules/             # UI y utilidades del formulario final
 	pages/
@@ -114,7 +126,8 @@ src/
 
 1. Entra por `/admin/login`.
 2. Valida credenciales contra tabla `admins`.
-3. Accede a `/admin/sede` para gestión de validaciones.
+3. Accede a `/admin/sede` para gestión de validaciones (máximo 7 por sede). Los admins multisede o globales eligen la sede al crear una validación.
+4. "Ver index" abre el panel del participante en modo vista previa (`/?previewEmail=...`), solo para estudiantes de sus sedes.
 
 ## Base de datos (resumen)
 
@@ -142,7 +155,9 @@ El endpoint `POST /api/final-form/submit` crea/actualiza la tabla `attendees` si
 
 - Rutas `/admin` y `/api/admin`: requieren sesión admin.
 - Rutas de estudiante privadas: requieren sesión estudiante.
+- Las rutas `/api/*` sin sesión responden `401` en JSON (las páginas redirigen al login).
 - `/landing` redirige a `/` cuando ya existe sesión activa.
+- Modo mantenimiento: cambia `MAINTENANCE_MODE` a `true` en `src/middleware.ts`.
 
 Cookies de sesión:
 
@@ -154,6 +169,10 @@ Cookies de sesión:
 ### Error: Missing required environment variable: DATABASE_URL
 
 Define `DATABASE_URL` en `.env` y reinicia el servidor.
+
+### El paso "Capacitaciones de la plataforma" nunca aparece completado
+
+Verifica que `TRAINING_DATABASE_URL` esté definida (también en Vercel) y que la tabla `student_capacitaciones` sea accesible.
 
 ### Login Auth0 falla en callback
 
@@ -176,7 +195,4 @@ El nodo final del dashboard depende de registros existentes en la tabla `attende
 - Activar HTTPS para que las cookies `Secure` se apliquen correctamente.
 - Definir migraciones SQL versionadas en lugar de depender solo de creación dinámica en endpoints.
 - Implementar hash seguro para contraseñas admin (bcrypt/argon2), en lugar de comparación en texto plano.
-
----
-
-Si necesitas, puedo agregar también una sección de despliegue (Vercel/Node server) y una plantilla de migraciones SQL para todas las tablas usadas por ENEUN.
+- No guardar credenciales en el código: todas las conexiones se configuran por variables de entorno.

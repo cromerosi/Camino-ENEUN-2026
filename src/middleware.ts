@@ -6,108 +6,110 @@ import { getAdminSessionCookieName, verifyAdminSessionToken } from './lib/admin-
 const MAINTENANCE_MODE = false; // Cambia a true para activar el modo mantenimiento
 const MAINTENANCE_PATH = '/mantenimiento';
 
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
+};
+
+const PUBLIC_FILES = new Set(['/favicon.ico', '/favicon.svg', '/eneun.ico', '/eneun.svg']);
+
+// Rutas de admin accesibles sin sesión (el logout debe poder limpiar una cookie vencida).
+const ADMIN_PUBLIC_ROUTES = new Set(['/admin/login', '/api/admin/login', '/api/admin/logout']);
+
+function isStaticAsset(pathname: string): boolean {
+  return pathname.startsWith('/_next') || pathname.startsWith('/public') || PUBLIC_FILES.has(pathname);
+}
+
+function redirectTo(request: NextRequest, pathname: string): NextResponse {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = '';
+  return NextResponse.redirect(url);
+}
+
+function unauthorizedJson(): NextResponse {
+  return NextResponse.json({ error: 'No autorizado' }, { status: 401, headers: NO_STORE_HEADERS });
+}
+
+async function readAdminSession(request: NextRequest) {
+  try {
+    return await verifyAdminSessionToken(request.cookies.get(getAdminSessionCookieName())?.value);
+  } catch {
+    return null;
+  }
+}
+
+async function readStudentSession(request: NextRequest) {
+  try {
+    return await verifySignedSessionToken(request.cookies.get(getSessionCookieName())?.value);
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
-  const pathname = request.nextUrl.pathname;
+  const { pathname } = request.nextUrl;
 
   if (MAINTENANCE_MODE) {
-    const isMaintenanceRoute = pathname === MAINTENANCE_PATH;
-    const isStaticAsset =
-      pathname.startsWith('/_next') ||
-      pathname === '/favicon.ico' ||
-      pathname === '/eneun.ico' ||
-      pathname === '/eneun.svg';
-
     if (pathname.startsWith('/api')) {
       return NextResponse.json(
-        {
-          message: 'La plataforma se encuentra en mantenimiento. Intenta nuevamente mas tarde.',
-        },
-        {
-          status: 503,
-          headers: {
-            'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate',
-          },
-        }
+        { message: 'La plataforma se encuentra en mantenimiento. Intenta nuevamente más tarde.' },
+        { status: 503, headers: NO_STORE_HEADERS },
       );
     }
 
-    if (!isMaintenanceRoute && !isStaticAsset) {
-      const url = request.nextUrl.clone();
-      url.pathname = MAINTENANCE_PATH;
-      url.search = '';
-      return NextResponse.redirect(url);
+    if (pathname !== MAINTENANCE_PATH && !isStaticAsset(pathname)) {
+      return redirectTo(request, MAINTENANCE_PATH);
     }
 
     return NextResponse.next();
   }
 
-  // --- ADMIN ROUTES ---
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-    const isAdminLoginRoute = pathname === '/admin/login' || pathname === '/api/admin/login';
-    const adminSessionToken = request.cookies.get(getAdminSessionCookieName())?.value;
-    
-    let admin = null;
-    try {
-      if (adminSessionToken) {
-        admin = await verifyAdminSessionToken(adminSessionToken);
-      }
-    } catch {
-      admin = null;
-    }
+  if (isStaticAsset(pathname)) {
+    return NextResponse.next();
+  }
 
-    if (!admin && !isAdminLoginRoute) {
-      const url = request.nextUrl.clone();
-      url.pathname = '/admin/login';
-      url.search = '';
-      return NextResponse.redirect(url);
+  // --- RUTAS DE ADMIN ---
+  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
+    const admin = await readAdminSession(request);
+
+    if (!admin && !ADMIN_PUBLIC_ROUTES.has(pathname)) {
+      return pathname.startsWith('/api/') ? unauthorizedJson() : redirectTo(request, '/admin/login');
     }
 
     if (admin && pathname === '/admin/login') {
-      const url = request.nextUrl.clone();
-      url.pathname = '/admin/sede';
-      url.search = '';
-      return NextResponse.redirect(url);
+      return redirectTo(request, '/admin/sede');
     }
 
     return NextResponse.next();
   }
 
-  // --- STUDENT ROUTES ---
-  const sessionToken = request.cookies.get(getSessionCookieName())?.value;
-  let user = null;
-  try {
-    user = await verifySignedSessionToken(sessionToken);
-  } catch {
-    user = null;
+  // --- RUTAS DE ESTUDIANTE ---
+  if (pathname.startsWith('/api/auth')) {
+    return NextResponse.next();
   }
 
-  const isAuthRoute = pathname.startsWith('/api/auth');
-  const isPublicRoute =
-    pathname === '/landing' ||
-    pathname.startsWith('/_next') ||
-    pathname === '/favicon.ico' ||
-    pathname === '/eneun.ico' ||
-    pathname === '/eneun.svg' ||
-    pathname.startsWith('/public');
-
-  if (!user && !isAuthRoute && !isPublicRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/landing';
-    url.search = '';
-    return NextResponse.redirect(url);
-  }
+  const user = await readStudentSession(request);
 
   if (user && pathname === '/landing') {
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    url.search = '';
-    return NextResponse.redirect(url);
+    return redirectTo(request, '/');
   }
 
-  return NextResponse.next();
+  if (user || pathname === '/landing') {
+    return NextResponse.next();
+  }
+
+  // Vista previa del panel del participante desde el panel admin ("Ver index").
+  // getServerSideProps vuelve a validar la sesión y los permisos de sede.
+  if (pathname === '/' && request.nextUrl.searchParams.has('previewEmail')) {
+    const admin = await readAdminSession(request);
+    if (admin) {
+      return NextResponse.next();
+    }
+  }
+
+  return pathname.startsWith('/api/') ? unauthorizedJson() : redirectTo(request, '/landing');
 }
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image).*)'],
 };
-

@@ -1,11 +1,15 @@
 import type { GetServerSideProps, InferGetServerSidePropsType } from 'next';
-import { FormEvent, useState } from 'react';
+import Link from 'next/link';
+import { type FormEvent, useState } from 'react';
 import Layout from '../layouts/Layout';
+import { setNoStore } from '../lib/http';
 
 const errorMessages: Record<string, string> = {
   auth_failed: 'No fue posible completar la autenticación. Intenta de nuevo.',
   auth_disabled: 'La autenticación con Auth0 está deshabilitada temporalmente.',
   forbidden_email_domain: 'Solo se permiten correos institucionales @unal.edu.co.',
+  not_registered:
+    'Tu correo no aparece en los registros de ENEUN 2026. Verifica que estés usando el correo con el que hiciste la preinscripción.',
   auth0_session_missing:
     'No se encontró la sesión de autenticación. Esto puede pasar si se abre más de un diálogo de login, se refresca la pantalla durante el ingreso o se cambia entre modo escritorio y modo normal en Chrome. Intenta de nuevo desde la aplicación.',
 };
@@ -31,12 +35,12 @@ export default function LandingPage({
     <Layout>
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-16 lg:px-12">
         <div className="absolute top-6 right-6 z-50">
-          <a
+          <Link
             href="/admin/login"
             className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-emerald-300 transition hover:bg-emerald-500/20"
           >
             Administrador Sede
-          </a>
+          </Link>
         </div>
         <div className="pointer-events-none absolute inset-0">
           <div className="absolute -top-24 left-12 h-72 w-72 rounded-full bg-emerald-500/20 blur-[130px]"></div>
@@ -78,8 +82,7 @@ export default function LandingPage({
 }
 
 export const getServerSideProps: GetServerSideProps<LandingProps> = async (context) => {
-  context.res.setHeader('Cache-Control', 'no-store, no-cache, max-age=0, must-revalidate');
-  context.res.setHeader('Pragma', 'no-cache');
+  setNoStore(context.res);
 
   const error = typeof context.query.error === 'string' ? context.query.error : null;
   return {

@@ -1,11 +1,150 @@
 import type {
   ConfirmationBloodType,
   ConfirmationEpsOption,
+  ConfirmationHealthConditionCode,
+  ConfirmationHealthDetailQuestion,
   ConfirmationHealthOption,
   ConfirmationLodgingOption,
   ConfirmationPronounOption,
   ConfirmationRelationshipOption,
 } from "../types/confirmation";
+
+export const CAMPING_LODGING_CHOICE = "Planea Acampar";
+export const CAMPING_LODGING_ADDRESS = "UNAL, Campus La Nubia";
+
+export const EXCLUSIVE_HEALTH_CODES: ConfirmationHealthConditionCode[] = [
+  "NONE",
+  "PREFER_NOT_TO_ANSWER",
+];
+
+const GENERIC_DETAIL_PLACEHOLDER =
+  "Describe brevemente la información que quieras compartir";
+const GENERIC_DETAIL_ERROR =
+  "Cuéntanos brevemente qué ajuste o consideración debemos tener.";
+
+/**
+ * Preguntas de detalle por condición de salud, en el orden en que se muestran
+ * en el formulario y se guardan en attendees.health_details.condition_details.
+ */
+export const confirmationHealthDetailQuestions: ConfirmationHealthDetailQuestion[] = [
+  {
+    code: "ALLERGIES",
+    field: "allergiesDetail",
+    storageKey: "allergies",
+    label: "Si seleccionaste alergias, indícanos cuáles debemos tener en cuenta",
+    placeholder: "Ej. Penicilina, frutos secos, picaduras, etc.",
+    errorMessage: "Especifica las alergias a reportar.",
+  },
+  {
+    code: "ASTHMA",
+    field: "asthmaDetail",
+    storageKey: "asthma",
+    label: "Si seleccionaste asma, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "DIABETES",
+    field: "diabetesDetail",
+    storageKey: "diabetes",
+    label: "Si seleccionaste diabetes, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "NON_NEUROTYPICAL",
+    field: "nonNeurotypicalDetail",
+    storageKey: "non_neurotypical",
+    label: "Si seleccionaste no neurotípico, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "EPILEPSY",
+    field: "epilepsyDetail",
+    storageKey: "epilepsy",
+    label:
+      "Si seleccionaste epilepsia o antecedentes convulsivos, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "HYPERTENSION",
+    field: "hypertensionDetail",
+    storageKey: "hypertension",
+    label: "Si seleccionaste hipertensión, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "CARDIAC",
+    field: "cardiacConditionsDetail",
+    storageKey: "cardiac_conditions",
+    label: "Si seleccionaste condiciones cardíacas, ¿cuáles deseas reportar?",
+    placeholder: "Describe brevemente la condición o indicaciones relevantes",
+    errorMessage: "Describe las condiciones cardíacas a reportar.",
+  },
+  {
+    code: "REDUCED_MOBILITY",
+    field: "reducedMobilityDetail",
+    storageKey: "reduced_mobility",
+    label: "Si seleccionaste movilidad reducida, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "VISUAL_DISABILITY",
+    field: "visualDisabilityDetail",
+    storageKey: "visual_disability",
+    label: "Si seleccionaste discapacidad visual, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "HEARING_DISABILITY",
+    field: "hearingDisabilityDetail",
+    storageKey: "hearing_disability",
+    label: "Si seleccionaste discapacidad auditiva, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "PERMANENT_MEDICATION",
+    field: "permanentMedicationDetail",
+    storageKey: "permanent_medication",
+    label: "Si seleccionaste medicación permanente, indícanos cuál medicamento tomas y para qué",
+    placeholder: "Ej. Losartán 50 mg para hipertensión",
+    errorMessage: "Indica cuál medicamento tomas y para qué.",
+  },
+  {
+    code: "PSYCHOSOCIAL_DISABILITY",
+    field: "psychosocialDisabilityDetail",
+    storageKey: "psychosocial_disability",
+    label: "Si seleccionaste discapacidad psicosocial, ¿qué ajuste o consideración debemos tener en cuenta?",
+    placeholder: GENERIC_DETAIL_PLACEHOLDER,
+    errorMessage: GENERIC_DETAIL_ERROR,
+  },
+  {
+    code: "OTHER",
+    field: "otherHealthConditionDetail",
+    storageKey: "other",
+    label: "Indica cuál otra condición deseas reportar",
+    placeholder: "Escribe aquí la condición",
+    errorMessage: "Especifica la otra condición a reportar.",
+  },
+];
+
+export const confirmationTransportOptions = [
+  {
+    value: "SI",
+    label:
+      "Sí, me comprometo a hacer uso responsable del transporte, recursos y/o medios suministrados por la universidad",
+  },
+  {
+    value: "PROPIOS_MEDIOS",
+    label: "No, me comprometo a movilizarme por medio de mis propios recursos",
+  },
+] as const;
 
 export const confirmationHealthOptions: ConfirmationHealthOption[] = [
   {
@@ -57,7 +196,7 @@ export const confirmationHealthOptions: ConfirmationHealthOption[] = [
   },
   {
     code: "NON_NEUROTYPICAL",
-    label: "No neurotipico",
+    label: "No neurotípico",
     requiresDetail: true,
     detailField: "nonNeurotypicalDetail",
   },
@@ -136,7 +275,7 @@ export const confirmationLodgingOptions: ConfirmationLodgingOption[] = [
     value: "Casa de familiar o amistad",
     label: "Casa de familiar o amistad",
   },
-  { value: "Planea Acampar", label: "Planea Acampar" },
+  { value: CAMPING_LODGING_CHOICE, label: CAMPING_LODGING_CHOICE },
 ];
 
 export const confirmationEpsOptions: ConfirmationEpsOption[] = [
