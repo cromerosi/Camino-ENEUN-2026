@@ -2,6 +2,8 @@
 
 **Análisis de referencia: plataforma de seguimiento de participantes «Camino ENEUN 2026»**
 
+Abstracción de esta parte del proyecto, falta la plataforma de capacitaciones, asistencia de cada sesión, y generación y validación de certificados firmados por hashing
+
 | | |
 |---|---|
 | **Objeto analizado** | Aplicación web «Camino ENEUN 2026» contenida en este repositorio: portal del participante y panel de gestión por sede. |
